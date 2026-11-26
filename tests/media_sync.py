@@ -23,6 +23,10 @@ def full_sync(col, auth, upload):
     col.close_for_full_sync()
     col.full_upload_or_download(auth=auth, upload=upload, server_usn=status.server_media_usn)
     col.reopen(after_full_sync=True)
+    sync_media(col, auth)
+
+
+def sync_media(col, auth):
     col.sync_media(auth)
     deadline = time.monotonic() + 30
     while col.media_sync_status().active:
@@ -33,7 +37,14 @@ def full_sync(col, auth, upload):
 
 def main():
     fixture = json.loads((TEST / "fixture.json").read_text())
-    with tempfile.TemporaryDirectory(dir=TEST) as run_dir:
+    before, after = fixture["saved"], fixture["updated"]
+    source = Collection(str(SOURCE))
+    try:
+        fields = source.get_note(fixture["nid"]).fields
+        media = {name: (Path(source.media.dir()) / name).read_bytes() for name in (before, after)}
+    finally:
+        source.close()
+    with tempfile.TemporaryDirectory(dir=TEST, ignore_cleanup_errors=True) as run_dir:
         root = Path(run_dir)
         with socket.socket() as address:
             address.bind(("127.0.0.1", 0))
@@ -51,23 +62,41 @@ def main():
             try:
                 wait_for_server(server, port)
                 endpoint = f"http://127.0.0.1:{port}/"
-                sender = Collection(str(SOURCE))
+                sender_dir = root / "sender"
+                sender_dir.mkdir()
+                sender = Collection(str(sender_dir / "collection.anki2"))
                 try:
-                    full_sync(sender, sender.sync_login(USER, password, endpoint), True)
+                    note = sender.new_note(sender.models.by_name("Basic"))
+                    note["Front"], note["Back"] = fields[0], fields[1].replace(after, before)
+                    assert sender.media.write_data(before, media[before]) == before
+                    sender.add_note(note, sender.decks.id("Cali Plus Sync Test"))
+                    sender_auth = sender.sync_login(USER, password, endpoint)
+                    full_sync(sender, sender_auth, True)
                     receiver_dir = root / "receiver"
                     receiver_dir.mkdir()
                     receiver = Collection(str(receiver_dir / "collection.anki2"))
                     try:
-                        full_sync(receiver, receiver.sync_login(USER, password, endpoint), False)
-                        assert receiver.get_note(fixture["nid"]).fields == sender.get_note(fixture["nid"]).fields
-                        for name in (fixture["saved"], fixture["updated"]):
-                            assert (Path(sender.media.dir()) / name).read_bytes() == (Path(receiver.media.dir()) / name).read_bytes()
+                        receiver_auth = receiver.sync_login(USER, password, endpoint)
+                        full_sync(receiver, receiver_auth, False)
+                        assert receiver.get_note(note.id).fields == note.fields
+                        assert (Path(receiver.media.dir()) / before).read_bytes() == media[before]
+                        assert not (Path(receiver.media.dir()) / after).exists()
+                        note = sender.get_note(note.id)
+                        note["Back"] = fields[1]
+                        assert sender.media.write_data(after, media[after]) == after
+                        sender.update_note(note)
+                        for client, auth in ((sender, sender_auth), (receiver, receiver_auth)):
+                            client.sync_collection(auth, sync_media=False)
+                            sync_media(client, auth)
+                        assert receiver.get_note(note.id).fields == fields
+                        for name in (before, after):
+                            assert (Path(receiver.media.dir()) / name).read_bytes() == media[name]
                         assert not receiver.media.check().missing
                     finally:
                         receiver.close()
                 finally:
                     sender.close()
-                print("PASS: Anki server transferred the note and both SVGs byte for byte", flush=True)
+                print("PASS: Full sync and incremental edit transferred the note and both SVGs byte for byte", flush=True)
                 if "--android" in sys.argv:
                     status_file = TEST / "android" / "sync-endpoint.json"
                     status_file.write_text(json.dumps({"port": port, "user": USER, "password": password}))

@@ -1,0 +1,35 @@
+{
+  "shortcut": "Ctrl+Shift+E",
+  "annotate_shortcut": "Ctrl+Shift+D",
+  "zen_shortcut": "Alt+Z",
+  "placement": "beside",
+  "width": 620,
+  "board_opacity": 0.4,
+  "solid_background": false,
+  "pressure_enabled": true,
+  "pressure_strength": 70,
+  "zen_style": "writing",
+  "theme": "auto",
+  "persistence": "clear_on_next",
+  "auto_open_on_review": false,
+  "auto_hide_outside_review": true,
+  "show_board_button": true,
+  "show_annotate_button": true,
+  "show_editor_button": true,
+  "save_to_card": {
+    "paste_mode": "ask",
+    "target_field": "",
+    "insert_position": "end",
+    "image_html": "<img src=\"{filename}\" width=\"{width}\">",
+    "export_scale": 1,
+    "export_dark_mode": false,
+    "export_background": true
+  },
+  "favorite_colors": [
+    "#e03131",
+    "#1971c2",
+    "#2f9e44",
+    "#f08c00",
+    "#9c36b5"
+  ]
+}

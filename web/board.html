@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Anki-Cali Draw</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:transparent;touch-action:none}
+/* background layer: its opacity is the 'blackboard opacity'; ink and toolbars stay solid */
+body::before{content:"";position:fixed;left:0;top:0;right:0;bottom:0;background:var(--bg,#fff);opacity:var(--bgop,1);z-index:-1;pointer-events:none}
+body.dark{--bg:#121212}
+#base,#top{position:absolute;left:0;top:0;width:100%;height:100%}
+#tools,#props,#acts,#zoombar{position:fixed;z-index:5}
+#tools{top:10px;left:50%;transform:translateX(-50%);flex-wrap:wrap;justify-content:center;max-width:94vw}
+#props{left:10px;top:50%;transform:translateY(-50%);flex-direction:column;padding:6px 4px;gap:4px}
+#swatches{display:flex;flex-direction:column;align-items:center;gap:5px}
+#acts{bottom:10px;left:50%;transform:translateX(-50%)}
+#zoombar{left:10px;bottom:10px;gap:4px}
+#zoombar input{width:96px;accent-color:var(--ac)}
+#zlabel{min-width:52px;color:var(--mut);padding:0 4px}
+#toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:var(--fg);color:var(--isl);padding:7px 14px;border-radius:9px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:9}
+#toast.show{opacity:1}
+</style></head><body>
+<canvas id="base"></canvas><canvas id="top"></canvas>
+<div id="tools" class="ad-isl ad-ui"></div>
+<div id="props" class="ad-isl ad-ui ad-vert"></div>
+<div id="acts" class="ad-isl ad-ui"></div>
+<div id="zoombar" class="ad-isl ad-ui"></div>
+<div id="toast"></div>
+<script>/*SETTINGS*/</script>
+<script>/*CORE*/</script>
+<script>
+(function(){
+"use strict";
+const C=AnkiDrawCore,P=C.P,svg=C.svg;
+const S=Object.assign({theme:"light",opacity:1,scale:2,exportDark:false,exportBackground:true,pressure:.7,zen:"writing",zenKey:"",
+  favs:["#e03131","#1971c2","#2f9e44","#f08c00","#9c36b5"]},window.ANKI_SETTINGS||{});
+const send=c=>{typeof pycmd==="function"?pycmd(c):console.warn(c.slice(0,40))};
+const $=id=>document.getElementById(id);
+const st=document.createElement("style");st.textContent=C.CSS;document.head.appendChild(st);
+document.body.classList.add("ad-root");document.body.classList.toggle("dark",S.theme==="dark");
+// 0% is allowed; a 2% film is kept so the surface still receives pen/mouse input (clear pixels are click-through on Windows)
+const bgop=v=>document.documentElement.style.setProperty("--bgop",Math.max(.02,Math.min(1,v)));
+bgop(S.opacity);
+C.installTips(document.body);
+const ring=C.el("div","ad-ring");document.body.appendChild(ring);
+
+let saveBase="Save to card",zenHidden=S.zen==="toggle",busyTimer=null;
+const D=C.engine({base:$("base"),top:$("top"),ring:ring,view:{x:0,y:0,z:1},docMode:false,S:S,
+  isDark:()=>document.body.classList.contains("dark"),
+  accent:()=>getComputedStyle(document.body).getPropertyValue("--ac").trim(),
+  hooks:{sel:onSel,busy:onBusy,zoom:updateZoomUI}});
+
+/* ---------- helpers ---------- */
+function btn(parent,html,tip,fn,cls){const b=C.el("button",cls||"",html);if(tip)b.setAttribute("data-tip",tip);if(fn)b.onclick=fn;parent.appendChild(b);return b}
+const sep=p=>p.appendChild(C.el("div","ad-sep"));
+function toast(m){const t=$("toast");t.textContent=m;t.classList.add("show");clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove("show"),1800)}
+
+/* ---------- tools ---------- */
+const tbtn={};
+function setTool(t){D.setTool(t);for(const k in tbtn)tbtn[k].classList.toggle("on",k===t)}
+[["select","Select / move / resize / rotate"],["pen","Pen"],["line","Line"],["arrow","Arrow"],["rect","Rectangle"],["ellipse","Ellipse"],["eraser","Eraser"],["hand","Pan"]]
+ .forEach(([t,h])=>tbtn[t]=btn($("tools"),svg(t==="hand"?P.hand:P[t]),h,()=>setTool(t)));
+sep($("tools"));
+btn($("tools"),svg(P.undo),"Undo",D.undo);
+btn($("tools"),svg(P.redo),"Redo",D.redo);
+sep($("tools"));
+const trashBtn=btn($("tools"),svg(P.trash),"Clear canvas",()=>D.hasSel?D.delSel():D.clear());
+const eyeBtn=btn($("tools"),svg(P.eye),"",()=>toggleZen());
+
+/* ---------- colours: ink + 5 favourites + spectrum picker ---------- */
+const swHost=C.el("div");swHost.id="swatches";$("props").appendChild(swHost);
+const same=(a,b)=>String(a).toLowerCase()===String(b).toLowerCase();
+function markSwatch(){[...swHost.querySelectorAll(".ad-sw[data-c]")].forEach(b=>b.classList.toggle("on",same(b.getAttribute("data-c"),D.color)))}
+function pick(c){D.setColor(c,true);markSwatch()}
+function setFavs(f){S.favs=f;renderSwatches();picker.renderFavs();send("calidraw:favs:"+JSON.stringify(f))}
+function renderSwatches(){
+  swHost.innerHTML="";
+  const ink=btn(swHost,"","Default ink (follows the theme)",()=>pick("auto"),"ad-sw");ink.setAttribute("data-c","auto");ink.style.background="var(--fg)";
+  S.favs.forEach((c,i)=>{const b=btn(swHost,"","Favourite "+(i+1)+" (right-click: replace with the current colour)",()=>pick(c),"ad-sw");
+    b.setAttribute("data-c",c);b.style.background=c;
+    b.oncontextmenu=ev=>{ev.preventDefault();if(D.color!=="auto"&&!same(D.color,c)){const f=S.favs.slice();f[i]=D.color;setFavs(f)}}});
+  const sp=btn(swHost,"","Colour spectrum - pick any colour, save 5 favourites",()=>picker.toggle(),"ad-sw ad-spec");sp.setAttribute("data-spec","1");
+  markSwatch();
+}
+const picker=C.makePicker({parent:document.body,getColor:()=>D.color,getFavs:()=>S.favs,setFavs:setFavs,
+  onPick:(c,final)=>{D.setColor(c,final);markSwatch()},
+  place:pop=>{pop.style.left="64px";pop.style.top=Math.max(8,Math.min(innerHeight-pop.offsetHeight-8,innerHeight/2-pop.offsetHeight/2))+"px"}});
+renderSwatches();
+sep($("props"));
+
+/* ---------- thickness slider ---------- */
+const wbox=C.el("div","ad-wrap"),wdot=C.el("div","ad-wdot","<i></i>"),wl=C.el("div","ad-wl","3");
+function showWidth(w){wl.textContent=w;wdot.firstChild.style.width=wdot.firstChild.style.height=Math.min(20,Math.max(2,w))+"px"}
+const ws=C.makeSlider({min:1,max:40,step:.5,value:3,vertical:true,tip:"Pen thickness (slide up = thicker)",
+  onInput:v=>{D.setWidth(v);showWidth(v)},onChange:()=>D.applyWidthToSelection()});
+wbox.appendChild(wdot);wbox.appendChild(ws.el);wbox.appendChild(wl);$("props").appendChild(wbox);showWidth(3);
+
+/* ---------- actions ---------- */
+const copyBtn=btn($("acts"),svg(P.copy)+"Copy PNG","Copy to clipboard as PNG",()=>exportPng("copy"),"txt");
+const saveBtn=btn($("acts"),svg(P.save)+"Save to card","Export PNG and put it into the note",()=>exportPng("save"),"pri");
+function onSel(n){
+  saveBtn.lastChild.nodeValue=saveBase+(n?" (selection)":"");
+  copyBtn.lastChild.nodeValue=n?"Copy selection":"Copy PNG";
+  trashBtn.setAttribute("data-tip",n?"Delete selection":"Clear canvas");
+}
+
+/* ---------- zoom ---------- */
+const zc=f=>D.zoomAt(innerWidth/2,innerHeight/2,D.view.z*f);
+btn($("zoombar"),svg(P.minus),"Zoom out",()=>zc(1/1.5));
+const zs=C.el("input");zs.type="range";zs.id="zslider";zs.min=Math.log(D.ZMIN);zs.max=Math.log(D.ZMAX);zs.step=.01;zs.value=0;
+zs.oninput=()=>D.zoomAt(innerWidth/2,innerHeight/2,Math.exp(+zs.value));$("zoombar").appendChild(zs);
+btn($("zoombar"),svg(P.plus),"Zoom in",()=>zc(1.5));
+const zl=btn($("zoombar"),"1\u00d7","Reset zoom to 1\u00d7",()=>D.zoomAt(innerWidth/2,innerHeight/2,1));zl.id="zlabel";
+btn($("zoombar"),svg(P.fit),"Fit drawing (or selection) in view",D.fit);
+function updateZoomUI(z){$("zlabel").textContent=(+z.toFixed(z<10?2:1))+"\u00d7";$("zslider").value=Math.log(z)}
+
+/* ---------- zen mode: hide every tool ---------- */
+const ghost=C.el("button","ad-ghost",svg(P.eye));ghost.setAttribute("data-tip","Show the tools again");ghost.onclick=()=>toggleZen();document.body.appendChild(ghost);
+function updateZenTip(){eyeBtn.setAttribute("data-tip","Zen mode: hide all tools. Bring them back with the faint eye in the corner")}
+function applyZen(){document.body.classList.toggle("zen",zenHidden);if(zenHidden)picker.close()}
+function toggleZen(){zenHidden=!zenHidden;applyZen();send("calidraw:zen:"+(zenHidden?1:0))}
+function onBusy(b){                                   // "hide while writing"
+  if(S.zen!=="writing")return;
+  clearTimeout(busyTimer);
+  if(b){document.body.classList.add("writing");picker.close()}
+  else busyTimer=setTimeout(()=>document.body.classList.remove("writing"),250);
+}
+
+/* ---------- keyboard ---------- */
+addEventListener("keydown",e=>{
+  if(e.target&&e.target.tagName==="INPUT"&&e.target.type!=="range")return;
+  if(e.code==="Space"){D.setSpace(true);e.preventDefault();return}
+  const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
+  if(mod&&k==="z"){e.preventDefault();e.shiftKey?D.redo():D.undo();return}
+  if(mod&&k==="y"){D.redo();return}
+  if(mod&&k==="c"){e.preventDefault();exportPng("copy");return}
+  if(mod&&k==="a"){e.preventDefault();D.selectAll();setTool("select");return}
+  if(mod&&k==="0"){e.preventDefault();D.zoomAt(innerWidth/2,innerHeight/2,1);return}
+  if(mod||e.altKey)return;
+  if(k==="delete"||k==="backspace"){D.delSel();return}
+  if(k==="escape"){picker.close();D.deselect();return}
+  if(k==="+"||k==="="){zc(1.5);return}
+  if(k==="-"){zc(1/1.5);return}
+  if(k==="0"){D.zoomAt(innerWidth/2,innerHeight/2,1);return}
+  if(k==="f"){D.fit();return}
+  const m={v:"select",p:"pen",l:"line",a:"arrow",r:"rect",o:"ellipse",e:"eraser",h:"hand",8:"select",1:"pen",2:"line",3:"arrow",4:"rect",5:"ellipse",6:"eraser",7:"hand"};
+  if(m[k])setTool(m[k]);
+});
+addEventListener("keyup",e=>{if(e.code==="Space")D.setSpace(false)});
+
+/* ---------- export: only the selection if there is one ---------- */
+function exportPng(kind){
+  D.finish();
+  const list=D.list();
+  if(!list.length){toast("Canvas is empty");return}
+  const b=D.bounds(list),pad=24,x0=b[0],y0=b[1],w=b[2]-b[0]+2*pad,h=b[3]-b[1]+2*pad;
+  // "Size" = how large the picture shows on the card (1x = as drawn). Saved pictures are rendered at
+  // least 2x for crispness and given an explicit width; a pasted copy has exactly that many pixels.
+  const want=kind==="copy"?S.scale:Math.max(2,S.scale);
+  const px=Math.max(.25,Math.min(want,8192/Math.max(w,h),Math.sqrt(5e7/(w*h))));
+  const c=document.createElement("canvas");c.width=Math.ceil(w*px);c.height=Math.ceil(h*px);
+  const g=c.getContext("2d");
+  if(S.exportBackground){g.fillStyle=S.exportDark?"#121212":"#fff";g.fillRect(0,0,c.width,c.height)}
+  g.setTransform(px,0,0,px,(pad-x0)*px,(pad-y0)*px);
+  for(const e of list)D.drawEl(g,e,S.exportDark);
+  send("calidraw:"+kind+":"+Math.max(1,Math.round(w*S.scale))+":"+c.toDataURL("image/png").split(",")[1]);
+}
+
+/* ---------- API used by Python ---------- */
+window.ankiBridge={
+  clear:D.clear,
+  setOpacity:bgop,
+  configure(o){                                         // settings changed: apply live
+    const zen=S.zen;Object.assign(S,o);
+    if("opacity" in o)bgop(S.opacity);
+    if("favs" in o){renderSwatches();picker.renderFavs()}
+    if("zenKey" in o)updateZenTip();
+    if("zen" in o&&o.zen!==zen){zenHidden=S.zen==="toggle";document.body.classList.remove("writing");applyZen();send("calidraw:zen:"+(zenHidden?1:0))}
+  },
+  setSaveLabel(t){saveBase=t;onSel(D.hasSel?1:0)},
+  setTheme(t){document.body.classList.toggle("dark",t==="dark");D.redraw()},
+  toggleZen:toggleZen,
+  nudge(dy){D.nudge(0,dy)},                             // the title bar was hidden/shown: keep the drawing where it was
+  dump:D.dump,load:D.load
+};
+setTool("pen");D.resize();onSel(0);applyZen();updateZenTip();
+send("calidraw:ready");if(zenHidden)send("calidraw:zen:1");
+})();
+</script></body></html>

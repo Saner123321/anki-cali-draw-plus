@@ -19,6 +19,7 @@ from .annotation import AnnotationOverlay
 from .blackboard import BlackboardWindow, get_config
 from .drawing_media import drawing_refs, read_scene
 from .settings import SettingsDialog
+from .updater import check_for_updates
 
 NAME = "Anki-Cali Draw Plus"
 
@@ -245,14 +246,22 @@ def _add_toolbar_links(links: list, toolbar) -> None:
 
 
 def _style_toolbar(web_content, context) -> None:
-    """Turn our text links into compact icon buttons when the toolbar page loads."""
-    from aqt.toolbar import Toolbar
+    """Style the Plus links and hide matching upstream actions within the toolbar views."""
+    from aqt import toolbar
+    from aqt.editor import Editor
 
     cfg = get_config()
-    if not isinstance(context, Toolbar):
+    hide_original = cfg.get("hide_upstream_buttons", True)
+    if isinstance(context, Editor):
+        if hide_original and cfg.get("show_editor_button", True):
+            web_content.head += "<style>#ankicali_editor{display:none!important}</style>"
         return
-    if not (cfg.get("show_board_button", True) or cfg.get("show_annotate_button", True)):
+    # Modern Anki wraps the main toolbar in a TopToolbar context.
+    if not isinstance(context, (toolbar.Toolbar, getattr(toolbar, "TopToolbar", toolbar.Toolbar))):
         return
+    hidden = [f"#ankicali_{name}" for name in ("board", "annotate") if cfg.get(f"show_{name}_button", True)]
+    if hide_original and hidden:
+        web_content.head += "<style>" + ",".join(hidden) + "{display:none!important}</style>"
     web_content.head += (
         "<style>#caliplus_board,#caliplus_annotate{display:inline-flex!important;align-items:center;"
         "padding:2px 6px!important;margin:0 1px;border-radius:6px}"
@@ -307,6 +316,7 @@ _SETTING_LABELS = {
     "show_board_button": "Blackboard toolbar button",
     "show_annotate_button": "Annotate toolbar button",
     "show_editor_button": "Editor draw button",
+    "hide_upstream_buttons": "Hide duplicate original buttons",
     "save_to_card": "Save to card",
 }
 
@@ -350,6 +360,8 @@ def _setup() -> None:
     settings_action = QAction("Settings…", mw)
     settings_action.triggered.connect(open_settings)
     menu.addAction(settings_action)
+    update_action = menu.addAction("Check for updates (GitHub)…")
+    update_action.triggered.connect(lambda: check_for_updates(mw, update_action))
 
     # Keyboard shortcuts are plain QShortcuts, not menu-item shortcuts: they work the same
     # but Qt does not print the key combination next to the menu entries.

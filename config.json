@@ -19,6 +19,7 @@
   "show_board_button": true,
   "show_annotate_button": true,
   "show_editor_button": true,
+  "hide_upstream_buttons": true,
   "save_to_card": {
     "paste_mode": "ask",
     "target_field": "",

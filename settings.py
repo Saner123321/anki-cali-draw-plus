@@ -235,11 +235,13 @@ class SettingsDialog(QDialog):
         w.setLayout(lay)
         self.show_board = QCheckBox("Show the Blackboard button in Anki's top toolbar")
         self.show_annot = QCheckBox("Show the Annotate button in Anki's top toolbar")
-        self.show_editor = QCheckBox("Show the Draw button in the card editor (Add / Edit / Browser)")
+        self.show_editor = QCheckBox("Show drawing buttons in the card editor (Add / Edit / Browser)")
+        self.hide_upstream = QCheckBox("Hide duplicate buttons from the original Anki-Cali Draw")
         lay.addWidget(self.show_board)
         lay.addWidget(self.show_annot)
         lay.addWidget(self.show_editor)
-        lay.addWidget(_hint("Hidden buttons stay available from Tools > Anki-Cali Draw Plus, the card's right-click menu and the keyboard shortcuts. The editor button appears the next time you open an editor window."))
+        lay.addWidget(self.hide_upstream)
+        lay.addWidget(_hint("The original add-on stays enabled and still receives AnkiWeb updates. Reopen the editor to see changes to its buttons."))
         lay.addStretch(1)
         return w
 
@@ -273,6 +275,7 @@ class SettingsDialog(QDialog):
         self.show_board.setChecked(bool(cfg.get("show_board_button", True)))
         self.show_annot.setChecked(bool(cfg.get("show_annotate_button", True)))
         self.show_editor.setChecked(bool(cfg.get("show_editor_button", True)))
+        self.hide_upstream.setChecked(bool(cfg.get("hide_upstream_buttons", True)))
 
         use_field = save["paste_mode"] == "field"
         self.radio_field.setChecked(use_field)
@@ -322,6 +325,7 @@ class SettingsDialog(QDialog):
             show_board_button=self.show_board.isChecked(),
             show_annotate_button=self.show_annot.isChecked(),
             show_editor_button=self.show_editor.isChecked(),
+            hide_upstream_buttons=self.hide_upstream.isChecked(),
             save_to_card=save,
         )
         return cfg

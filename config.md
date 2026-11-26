@@ -20,3 +20,4 @@ Advanced keys (for hand-editing `config.json`):
 - `favorite_colors` – the five favourite colours (edited from the colour picker in the toolbar).
 - `show_board_button`, `show_annotate_button` – the two icon buttons in Anki's top toolbar.
 - `show_editor_button` – show the new-drawing and reopen-drawing buttons in the card editor (Add / Edit / Browser).
+- `hide_upstream_buttons` – hide an original Anki-Cali Draw toolbar button when Plus displays the equivalent. The original add-on continues to receive AnkiWeb updates.

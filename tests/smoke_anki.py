@@ -1,4 +1,4 @@
-"""Exercise the actual desktop add-on twice in a profile with no account."""
+"""Exercise the desktop add-on and its hosted update in a profile with no account."""
 import base64
 import json
 import shutil
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEST = ROOT / ".anki-test"
 BASE = TEST / "desktop"
 STAGE = sys.argv[1]
-assert STAGE in ("write", "reopen")
+assert STAGE in ("write", "reopen", "update")
 sys.path.insert(0, str(ROOT))
 sys.argv = [sys.argv[0], "-b", str(BASE)]
 
@@ -88,6 +88,11 @@ def real_editor(col, note):
     browser.search_for(f"nid:{note.id}")
     until(lambda: browser.editor.note and browser.editor.note.id == note.id, "Browser showing the note")
     until(lambda: js(browser.editor.web, "!!document.getElementById('caliplus_editor')"), "editor buttons render")
+    assert js(browser.editor.web, """(() => {
+      const old=document.getElementById('ankicali_editor');
+      const reopen=document.getElementById('caliplus_edit');
+      return old && getComputedStyle(old).display==='none' && reopen && getComputedStyle(reopen).display!=='none';
+    })()"""), "only Plus drawing buttons should be visible in the editor"
     return browser
 
 
@@ -145,6 +150,48 @@ def add_mode(mw, addon):
     dialog.close()
 
 
+def github_update(mw, addon):
+    from anki_cali_draw_plus import updater
+
+    manifest = target / "manifest.json"
+    current = json.loads(manifest.read_bytes())
+    # Exercise the menu with an artificially older version in the isolated copy.
+    manifest.write_text(json.dumps({**current, "human_version": "0.1.0"}))
+    manager = mw.addonManager
+    saved = {**manager.getConfig("anki_cali_draw_plus"), "cursor_size": 31}
+    manager.writeConfig("anki_cali_draw_plus", saved)
+    original_meta = manager.addonMeta("1205964508")
+    user_file = target / "user_files" / "test-update-data.txt"
+    user_file.parent.mkdir(exist_ok=True)
+    user_file.write_text("retain me")
+    menu = next(action.menu() for action in mw.form.menuTools.actions() if action.text() == addon.NAME)
+    action = next(action for action in menu.actions() if "GitHub" in action.text())
+    messages = []
+    ask, info, warning, open_link = updater.askUser, updater.showInfo, updater.showWarning, updater.openLink
+
+    def approve(message, **kwargs):
+        if message.startswith("Install Anki-Cali Draw Plus "):
+            return True
+        messages.append(message)
+        return False
+
+    updater.askUser = approve
+    updater.showInfo = updater.showWarning = lambda message, **kwargs: messages.append(message)
+    updater.openLink = lambda url: messages.append(url)
+    try:
+        action.trigger()
+        until(lambda: messages, "GitHub update menu completed", seconds=50)
+        assert "was installed" in messages[0], messages
+        assert manager.getConfig("anki_cali_draw_plus") == saved
+        assert user_file.read_text() == "retain me"
+        assert manager.addonMeta("1205964508") == original_meta and manager.isEnabled("1205964508")
+        version = json.loads(manifest.read_bytes())["human_version"]
+        assert version == current["human_version"]
+        assert updater.find_update(version) is None
+    finally:
+        updater.askUser, updater.showInfo, updater.showWarning, updater.openLink = ask, info, warning, open_link
+
+
 def run():
     browser = preview = None
     try:
@@ -154,6 +201,21 @@ def run():
         from anki_cali_draw_plus.drawing_media import drawing_refs, read_scene
 
         assert "1205964508" in sys.modules, "upstream did not load alongside Plus"
+        toolbar = mw.toolbar.web
+        ready = "document.querySelectorAll('#caliplus_board svg, #caliplus_annotate svg').length===2"
+        until(lambda: js(toolbar, ready), "Plus toolbar icon rendering")
+        original_visibility = "['ankicali_board','ankicali_annotate'].map(id=>getComputedStyle(document.getElementById(id)).display)"
+        assert js(toolbar, original_visibility) == ["none", "none"]
+        pm = mw.addonManager
+        config = pm.getConfig("anki_cali_draw_plus")
+        original = pm.addonMeta("1205964508")
+        pm.writeConfig("anki_cali_draw_plus", {**config, "hide_upstream_buttons": False})
+        mw.toolbar.draw()
+        until(lambda: js(toolbar, ready), "toolbar refresh without deduplication")
+        assert all(style != "none" for style in js(toolbar, original_visibility))
+        pm.writeConfig("anki_cali_draw_plus", config)
+        mw.toolbar.draw()
+        assert pm.addonMeta("1205964508") == original and pm.isEnabled("1205964508")
         fixture = TEST / "fixture.json"
         if STAGE == "write":
             deck = col.decks.id("Cali Plus Test")
@@ -187,7 +249,7 @@ def run():
             other["Front"] += f'<br><img src="{saved.filename}">'
             col.update_note(other)
             fixture.write_text(json.dumps({"nid": note.id, "saved": saved.filename, "strokes": strokes}))
-        else:
+        elif STAGE == "reopen":
             original = json.loads(fixture.read_text())
             note = col.get_note(original["nid"])
             assert drawing_refs("Front", note["Front"])[0].filename == original["saved"]
@@ -242,6 +304,8 @@ def run():
             add_mode(mw, add_on)
             review_tools(mw, add_on, actual)
             fixture.write_text(json.dumps({**original, "updated": changed.filename}))
+        else:
+            github_update(mw, add_on)
         (TEST / f"{STAGE}.result").write_text("PASS", encoding="utf-8")
     except Exception:
         (TEST / f"{STAGE}.result").write_text(traceback.format_exc(), encoding="utf-8")

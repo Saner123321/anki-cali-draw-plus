@@ -1,0 +1,23 @@
+name: Publish Anki add-on
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build add-on
+        run: |
+          version=$(python3 -c 'import json; print(json.load(open("manifest.json"))["human_version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
+          python3 build.py
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/*.ankiaddon --verify-tag --generate-notes --latest

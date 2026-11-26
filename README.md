@@ -4,10 +4,16 @@
 
 ## 使用
 
-1. 用 Anki 的 **工具 → 插件 → 从文件安装** 安装 `.ankiaddon`，然后重启 Anki。本地插件 ID 为 `anki_cali_draw_plus`。
+1. 从 [GitHub 最新发行版](https://github.com/Saner123321/anki-cali-draw-plus/releases/latest) 下载 `.ankiaddon`。用 Anki 的 **工具 → 插件 → 从文件安装** 安装，然后重启 Anki。本地插件 ID 为 `anki_cali_draw_plus`。同一安装包可用于 x64 和 ARM64 Anki。Windows ARM 平板可安装官方 [Anki Windows 11 (ARM)](https://apps.ankiweb.net/) 版。
 2. 在添加、编辑或浏览窗口中，点鼠标悬停提示带 **Anki-Cali Draw Plus** 的画板图标，新建绘图。点击 **Insert into note** 保存到字段。添加窗口中的笔记仍需按 **Add** 入库。
 3. 要修改已保存的绘图，点同一工具栏上带 **reopen a saved drawing** 提示的图标。笔记中有多张手写图时，按字段名和出现顺序选择。修改后点 **Update drawing**，卡片原位置会显示更新版。
 4. 在 **工具 → Anki-Cali Draw Plus → Settings… → Drawing** 里可选十字、圆点、空心圆或隐藏笔尖光标，也可调整尺寸和压感强度。只有触屏的设备可以切换为手指写字。
+
+## 两个插件一起用和更新
+
+Plus 默认会在顶部工具栏和卡片编辑器隐藏重复的原版按钮。原版 `1205964508` 可以保持启用，仍在 **工具 → 插件 → 检查更新** 里接收 AnkiWeb 更新。要同时显示两套按钮，在 Plus 的 **Settings… → Toolbar** 取消勾选 **Hide duplicate buttons from the original Anki-Cali Draw**。
+
+Plus 有自己的 **工具 → Anki-Cali Draw Plus → Check for updates (GitHub)…** 入口。发现新版后确认安装，再重启 Anki。更新检查使用 GitHub Releases，校验安装包的 SHA-256，并沿用 Anki 安装器保留插件设置。平板和电脑都可以独立检查和更新。已经安装 0.1.0 的设备需要先从 GitHub 安装一次 0.1.1 或更新版本。
 
 复习时可用 `Ctrl+Alt+Shift+E` 打开 Plus 黑板，或用 `Ctrl+Alt+Shift+D` 打开贴在卡片上的批注层。批注层里手指负责滚动卡片，笔迹随卡片滚动。捏合缩放适用于黑板。`Alt+Shift+Z` 切换工具显隐。**Copy PNG** 可把当前选择或整张画布复制成普通图片。
 
@@ -24,6 +30,8 @@
 ## 构建和更新上游
 
 运行 `python build.py` 生成安装包。`upstream/ankiweb` 保存原始发行版快照，基线标签为 `upstream-1205964508-1794405980`。未来 AnkiWeb 发布更新时，在这个分支用新版发行包替换对应的源文件并提交，排除本机 `meta.json`、用户配置和缓存。为新版本打标签，再在 `main` 合并 `upstream/ankiweb`，解决冲突后重新运行桌面和同步测试。
+
+发布 Plus 时更新 `manifest.json` 的 `human_version`，提交并推送对应的 `vX.Y.Z` 标签。GitHub Actions 会构建安装包并发布 Release。原版的 AnkiWeb 更新可以独立安装，合并进 Plus 需要走上游导入流程。
 
 Anki-Cali Draw 原作来自 AnkiWeb `1205964508`，页面版本为 1.3.2。原包的 MIT 许可证原样保留，文件中的版权署名仍为 `<YOUR NAME>`，可取得的上游资料里未核实到作者姓名。 [Anki-Cali Draw 原版](https://ankiweb.net/shared/info/1205964508)
 

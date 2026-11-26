@@ -149,7 +149,7 @@ def editor_window_controls(board, editor):
                 assert isinstance(dialog, SettingsDialog), "settings did not become the active modal window"
                 assert dialog.parentWidget() is board
                 assert dialog.windowHandle().transientParent() is board.windowHandle()
-                assert dialog.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+                assert dialog.windowModality() == Qt.WindowModality.WindowModal
                 if sys.platform == "win32":
                     import win32gui
                     hwnd = int(dialog.winId())
@@ -203,16 +203,40 @@ def add_mode(mw, addon):
 
     dialog = aqt.dialogs.open("AddCards", mw)
     editor = dialog.editor
+    area = dialog.screen().availableGeometry()
+    width = min(650, area.width() // 2)
+    dialog.setGeometry(area.right() - width - 30, area.top() + 65, width, min(550, area.height() - 100))
     front = f"Cali Plus Add workflow {time.time_ns()}"
     editor.note["Front"] = front
     editor.loadNote(focusTo=1)
     until(lambda: js(editor.web, "!!document.getElementById('caliplus_editor')"), "Add toolbar ready")
     editor.currentField = 1
-    js(editor.web, "document.getElementById('caliplus_editor').click()")
-    board = until(lambda: addon._editor_board._target.editor is editor and addon._editor_board,
-                  "Add mode opens a separate drawing")
+    main_state = mw.windowState()
+    mw.showMinimized()
+    try:
+        js(editor.web, "document.getElementById('caliplus_editor').click()")
+        board = until(lambda: addon._editor_board._target.editor is editor and addon._editor_board.isVisible() and addon._editor_board,
+                      "Add mode opens a separate drawing even when the main window is minimized")
+        assert dialog.isVisible() and not dialog.isMinimized() and mw.isMinimized()
+        assert board.windowHandle().transientParent() is dialog.windowHandle()
+        if sys.platform == "win32":
+            import win32gui
+            assert win32gui.GetWindow(int(board.winId()), 4) == int(dialog.winId())  # GW_OWNER
+            assert win32gui.IsWindowVisible(int(dialog.winId())) and not win32gui.IsIconic(int(dialog.winId()))
+        if dialog.frameGeometry().left() - area.left() >= 350:
+            assert not board.frameGeometry().intersects(dialog.frameGeometry())
+    finally:
+        mw.setWindowState(main_state)
     js(board.web, "ankiBridge.load('[{\"t\":\"pen\",\"c\":\"auto\",\"w\":3,\"p\":[[25,30]]}]')")
     editor_window_controls(board, editor)
+    board.hide_panel()
+    dialog.move(area.left() + 30, dialog.y())
+    editor.currentField = 1
+    js(editor.web, "document.getElementById('caliplus_editor').click()")
+    until(board.isVisible, "canvas reopens beside the moved editor")
+    assert dialog.isVisible() and not dialog.isMinimized()
+    if area.right() - dialog.frameGeometry().right() >= 350:
+        assert board.frameGeometry().left() > dialog.frameGeometry().right()
     js(board.web, whole("Insert into note"))
     ref = until(lambda: drawing_refs("Back", editor.note["Back"]), "image inserted in Add mode")[0]
     until(lambda: editor_image(editor.web, ref.filename), "Add editor image")
@@ -229,7 +253,7 @@ def github_update(mw, addon):
     manifest = target / "manifest.json"
     current = json.loads(manifest.read_bytes())
     # Exercise the menu with an artificially older version in the isolated copy.
-    manifest.write_text(json.dumps({**current, "human_version": "0.1.1"}))
+    manifest.write_text(json.dumps({**current, "human_version": "0.1.3"}))
     manager = mw.addonManager
     saved = {**manager.getConfig("anki_cali_draw_plus"), "cursor_size": 31}
     manager.writeConfig("anki_cali_draw_plus", saved)

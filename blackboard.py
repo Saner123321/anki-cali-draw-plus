@@ -244,12 +244,12 @@ class BlackboardWindow(QWidget):
         self._current_cid: Optional[int] = None
         self._placed = False
         self._placement_settings = None
+        self._placement_anchor: QRect | None = None
         self._destroying = False
         self._target: EditorTarget | None = None
         self._session = 0
         self._saving = None
         self._switching = False
-        self._ontop = False
         self._translucent = False  # real see-through window (only when opacity < 100%)
         self._zen_hidden = False  # title bar hidden because the page is in zen mode
 
@@ -336,6 +336,7 @@ class BlackboardWindow(QWidget):
         was_visible = self.isVisible()
         state = self.windowState()
         if self._sync_translucency() and was_visible:
+            self._attach_to_owner()
             self.setWindowState(state)
             self.show()  # the native window was recreated
         self._push_settings()
@@ -483,9 +484,12 @@ class BlackboardWindow(QWidget):
     # Show / hide / placement
     # ------------------------------------------------------------------
     def show_panel(self) -> None:
+        self._attach_to_owner()
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
-        if not self._placed and not self.isMaximized():
+        anchor_moved = (self._placement_settings[0] != "remember"
+                        and self._placement_anchor != self._owner().frameGeometry())
+        if not self.isMaximized() and (not self._placed or anchor_moved):
             self._place()
             self._placed = True
         if self._target is None and self._current_cid is None and mw.reviewer.card:
@@ -520,7 +524,6 @@ class BlackboardWindow(QWidget):
     # -- which card is the drawing for? ---------------------------------
     def show_for_reviewer(self) -> None:
         self._target = None
-        self._set_on_top(False)
         self._run(f"ankiBridge.setSaveLabel({json.dumps('Save to card')})")
         self.show_panel()
 
@@ -543,9 +546,11 @@ class BlackboardWindow(QWidget):
                 return
             if target.current_note() is None:
                 return
+            old_owner = self._owner()
             self._target = target
             self._session += 1
-            self._set_on_top(True)
+            if self._owner() is not old_owner:
+                self._placed = False
             self.show_panel()
             self._run(f"ankiBridge.beginSession({self._session},{json.dumps(scene)},{json.dumps(drawing is not None)})")
 
@@ -565,39 +570,63 @@ class BlackboardWindow(QWidget):
     def is_reviewer_target(self) -> bool:
         return self._target is None
 
-    def _set_on_top(self, on: bool) -> None:
-        if on != self._ontop:
-            self._ontop = on
-            self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)  # hides; show_panel re-shows
+    def _owner(self) -> QWidget:
+        if self._target and self._target.current_note() is not None:
+            return getattr(self._target.editor, "parentWindow", None) or mw
+        return mw
+
+    def _attach_to_owner(self) -> None:
+        # Keep the board alive across editors, but let the native window manager
+        # keep it above the editor that opened it instead of above every window.
+        owner = self._owner()
+        owner.winId()
+        self.winId()
+        handle, owner_handle = self.windowHandle(), owner.windowHandle()
+        if handle.transientParent() is not owner_handle:
+            handle.setTransientParent(owner_handle)
 
     def _return_focus(self) -> None:
-        win = getattr(self._target.editor, "parentWindow", None) if self._target else None
         try:
-            (win or mw).activateWindow()
+            self._owner().activateWindow()
         except RuntimeError:  # editor window already destroyed
             mw.activateWindow()
 
     def _place(self) -> None:
         cfg = get_config()
         placement = cfg.get("placement", "beside")
-        width = int(cfg.get("width", 620))
+        owner = self._owner()
+        self._placement_anchor = owner.frameGeometry()
+        screen = owner.screen() or QGuiApplication.primaryScreen()
+        available = screen.availableGeometry()
+        width = min(int(cfg.get("width", 620)), available.width())
 
         if placement == "remember" and mw.pm.profile.get(f"{GEOM_KEY}Geom"):
             restoreGeom(self, GEOM_KEY)
             return
 
         if placement == "overlay":
-            self.setGeometry(QRect(mw.web.mapToGlobal(QPoint(0, 0)), mw.web.size()))
-            return
+            web = (getattr(self._target.editor, "web", None) if self._target else None) or mw.web
+            overlay = QRect(web.mapToGlobal(QPoint(0, 0)), web.size()).intersected(available)
+            if not overlay.isEmpty():
+                self.setGeometry(overlay)
+                return
 
         # "beside" (also the first-run fallback for "remember")
-        frame = mw.frameGeometry()
-        screen = mw.screen() or QGuiApplication.primaryScreen()
-        avail = screen.availableGeometry()
-        if avail.right() - frame.right() >= width:
-            x = frame.right() + 1
-        else:  # not enough room: cover the right edge of Anki instead
-            x = max(avail.left(), frame.right() - width + 1)
+        frame = self._placement_anchor.intersected(available)
+        if frame.isEmpty():
+            frame = available
+        left = frame.left() - available.left()
+        right = available.right() - frame.right()
+        use_right = right >= width or right >= left
+        room = right if use_right else left
+        if room >= min(350, width):
+            width = min(width, room)
+        else:
+            width = min(width, max(350, available.width() // 2))
+        if use_right:
+            x = min(frame.right() + 1, available.right() - width + 1)
+        else:
+            x = max(available.left(), frame.left() - width)
         self.setGeometry(x, frame.top(), width, frame.height())
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)

@@ -1,6 +1,6 @@
 /* Anki-Cali Draw core: the drawing engine and UI helpers shared by the blackboard page and the
    on-card annotation overlay. Written for old Chromium (no ?. / ?? / CSS inset). */
-window.AnkiDrawCore=window.AnkiDrawCore||(function(){
+window.CaliPlusCore=window.CaliPlusCore||(function(){
 "use strict";
 
 /* ------------------------------------------------------------------ icons / css / dom helpers */

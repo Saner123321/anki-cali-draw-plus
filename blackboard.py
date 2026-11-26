@@ -1,4 +1,4 @@
-"""Anki-Cali Draw blackboard window.
+"""Anki-Cali Draw Plus blackboard window.
 
 A small top-level tool window that hosts the bundled drawing page (web/board.html) inside
 an ``AnkiWebView`` (QtWebEngine). Using AnkiWebView gives us, for free:
@@ -18,11 +18,11 @@ import base64
 import json
 import os
 import re
-import time
+from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from aqt import mw
-from aqt.operations.note import update_note
+from aqt.operations import CollectionOp
 from aqt.qt import (
     QApplication,
     QHBoxLayout,
@@ -36,16 +36,19 @@ from aqt.qt import (
     QPoint,
     QRect,
     QShortcut,
+    QTimer,
     Qt,
     QVBoxLayout,
     QWidget,
 )
 from aqt.theme import theme_manager
-from aqt.utils import restoreGeom, saveGeom, tooltip
+from aqt.utils import askUser, restoreGeom, saveGeom, tooltip
 from aqt.webview import AnkiWebView
 
+from .drawing_media import MAX_SVG_BYTES, DrawingRef, drawing_refs, load_scene, media_name
+
 ADDON = mw.addonManager.addonFromModule(__name__)
-GEOM_KEY = "caliDrawBoard"
+GEOM_KEY = "caliDrawPlusBoard"
 EDGE = 5  # px of frame around the web view that acts as the resize border
 
 PALETTE = {
@@ -147,6 +150,21 @@ def _event_pos(ev):
     return ev.position().toPoint() if hasattr(ev, "position") else ev.pos()
 
 
+@dataclass
+class EditorTarget:
+    editor: Any
+    note: Any
+    field: str | None
+    drawing: DrawingRef | None
+
+    def current_note(self):
+        note = getattr(self.editor, "note", None)
+        if getattr(self.editor, "web", None) is not None and note is not None:
+            if note is self.note or (note.id and note.id == self.note.id):
+                return note
+        return None
+
+
 class DragBar(QWidget):
     """Slim custom title bar for the frameless window: drag to move, X to hide."""
 
@@ -159,12 +177,12 @@ class DragBar(QWidget):
         self.setFixedHeight(28)
         lay = QHBoxLayout(self)
         lay.setContentsMargins(10, 0, 4, 0)
-        lay.addWidget(QLabel("Anki-Cali Draw"))  # QLabel ignores clicks -> they reach the bar
+        lay.addWidget(QLabel("Anki-Cali Draw Plus"))  # QLabel ignores clicks -> they reach the bar
         lay.addStretch(1)
         if on_settings:
             gear = QToolButton()
             gear.setText("\u2699")
-            gear.setAccessibleName("Anki-Cali Draw settings")
+            gear.setAccessibleName("Anki-Cali Draw Plus settings")
             gear.setCursor(Qt.CursorShape.PointingHandCursor)
             gear.clicked.connect(on_settings)
             lay.addWidget(gear)
@@ -204,13 +222,16 @@ class BlackboardWindow(QWidget):
         self._current_cid: Optional[int] = None
         self._placed = False
         self._destroying = False
-        self._target = None  # (editor, field index) when opened from the card editor
+        self._target: EditorTarget | None = None
+        self._session = 0
+        self._saving = None
+        self._switching = False
         self._ontop = False
         self._translucent = False  # real see-through window (only when opacity < 100%)
         self._zen_hidden = False  # title bar hidden because the page is in zen mode
 
         self.setObjectName(GEOM_KEY)
-        self.setWindowTitle("Anki-Cali Draw")
+        self.setWindowTitle("Anki-Cali Draw Plus")
         self.resize(int(get_config().get("width", 620)), 640)
 
         self.web = AnkiWebView(parent=self, title="calidraw")
@@ -258,7 +279,7 @@ class BlackboardWindow(QWidget):
             "pressure": pressure_value(),
             **input_settings(),
             "zen": zen_mode(),
-            "zenKey": get_config().get("zen_shortcut", "Alt+Z"),
+            "zenKey": get_config().get("zen_shortcut", "Alt+Shift+Z"),
             "favs": get_favorites(),
             "scale": scale,
             "exportDark": bool(s["export_dark_mode"]),
@@ -278,13 +299,15 @@ class BlackboardWindow(QWidget):
             html = f.read()
         with open(os.path.join(web, "core.js"), encoding="utf-8") as f:
             core = f.read()
+        with open(os.path.join(web, "scene.js"), encoding="utf-8") as f:
+            scene = f.read()
         html = html.replace("/*SETTINGS*/", f"window.ANKI_SETTINGS = {json.dumps(settings)};")
-        return html.replace("/*CORE*/", core)
+        return html.replace("/*CORE*/", core).replace("/*SCENE*/", scene)
 
     def apply_config(self) -> None:
         cfg = get_config()
-        self._shortcut.setKey(QKeySequence(cfg.get("shortcut", "Ctrl+Shift+E")))
-        self._zen_shortcut.setKey(QKeySequence(cfg.get("zen_shortcut", "Alt+Z")))
+        self._shortcut.setKey(QKeySequence(cfg.get("shortcut", "Ctrl+Alt+Shift+E")))
+        self._zen_shortcut.setKey(QKeySequence(cfg.get("zen_shortcut", "Alt+Shift+Z")))
         self.setWindowOpacity(1.0)  # QtWebEngine ignores window opacity; fade the page instead
         was_visible = self.isVisible()
         if self._sync_translucency() and was_visible:
@@ -383,8 +406,7 @@ class BlackboardWindow(QWidget):
         elif cmd.startswith("calidraw:copy:"):
             self._copy_png(cmd[len("calidraw:copy:"):].partition(":")[2])
         elif cmd.startswith("calidraw:save:"):
-            width, _, data = cmd[len("calidraw:save:"):].partition(":")
-            self._save_png_to_card(data, int(width) if width.isdigit() else None)
+            self._save_drawing(cmd[len("calidraw:save:"):])
         return None
 
     # ------------------------------------------------------------------
@@ -453,13 +475,36 @@ class BlackboardWindow(QWidget):
         self._run(f"ankiBridge.setSaveLabel({json.dumps('Save to card')})")
         self.show_panel()
 
-    def show_for_editor(self, editor) -> None:
-        """Open for the Add / Edit / Browser editor: Save inserts into that note."""
-        self._target = (editor, getattr(editor, "currentField", None))
-        self._current_cid = None
-        self._set_on_top(True)  # the editor is another top-level window
-        self._run(f"ankiBridge.setSaveLabel({json.dumps('Insert into note')})")
-        self.show_panel()
+    def show_for_editor(self, editor, note, field, drawing=None, scene="") -> None:
+        if self._saving or self._switching:
+            tooltip("Wait for the current drawing operation to finish.", parent=self)
+            return
+        target = EditorTarget(editor, note, field, drawing)
+        old = self._target
+        if old and old.editor is editor and old.current_note() is note and old.field == field and old.drawing == drawing:
+            self.show_panel()
+            return
+
+        def open_session(dirty=False) -> None:
+            self._switching = False
+            if self._destroying or target.current_note() is None:
+                return
+            if dirty and not askUser("Discard the unsaved changes to the drawing on the blackboard?", parent=self, defaultno=True):
+                self.show_panel()
+                return
+            if target.current_note() is None:
+                return
+            self._target = target
+            self._session += 1
+            self._set_on_top(True)
+            self.show_panel()
+            self._run(f"ankiBridge.beginSession({self._session},{json.dumps(scene)},{json.dumps(drawing is not None)})")
+
+        if old:
+            self._switching = True
+            self._run("ankiBridge.isDirty()", open_session)
+        else:
+            open_session()
 
     def is_reviewer_target(self) -> bool:
         return self._target is None
@@ -470,7 +515,7 @@ class BlackboardWindow(QWidget):
             self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on)  # hides; show_panel re-shows
 
     def _return_focus(self) -> None:
-        win = getattr(self._target[0], "parentWindow", None) if self._target else None
+        win = getattr(self._target.editor, "parentWindow", None) if self._target else None
         try:
             (win or mw).activateWindow()
         except RuntimeError:  # editor window already destroyed
@@ -579,11 +624,116 @@ class BlackboardWindow(QWidget):
     def _copy_png(self, b64: str) -> None:
         copy_png(b64, self)
 
-    def _save_png_to_card(self, b64: str, width: Optional[int] = None) -> None:
-        if self._target is not None:
-            save_png_to_editor(b64, self._target[0], self._target[1], self, width)
+    def _save_drawing(self, payload: str) -> None:
+        if self._saving or self._destroying:
+            return
+        token = self._saving = object()
+        target, session, col = self._target, self._session, mw.col
+
+        def done(message: str, drawing: DrawingRef | None = None) -> None:
+            if self._saving is not token or self._destroying:
+                return
+            self._saving = None
+            if drawing is not None:
+                target.field, target.drawing = drawing.field, drawing
+            self._run(f"ankiBridge.saved({session},{json.dumps(drawing is not None)})")
+            if message:
+                tooltip(message, parent=self)
+
+        try:
+            if len(payload) > MAX_SVG_BYTES + MAX_SVG_BYTES // 2:
+                raise ValueError("The drawing exceeds the maximum SVG size.")
+            request = json.loads(payload)
+            if request["session"] != session or self._switching or col is None:
+                raise ValueError("The drawing target changed. Open the note again before saving.")
+            width, whole = request["width"], request["whole"]
+            if type(width) is not int or not 1 <= width <= 16384 or type(whole) is not bool:
+                raise ValueError("Invalid drawing size.")
+            data = request["svg"].encode("utf-8")
+            load_scene(data)
+            cfg = save_config()
+        except (ValueError, KeyError, AttributeError, TypeError, RecursionError) as exc:
+            done(str(exc))
+            return
+
+        def persist(note, field, old_html=None) -> None:
+            ref = target.drawing if target else None
+            result = None
+
+            def write(current_col):
+                nonlocal result
+                current = current_col.get_note(note.id)
+                if field not in current or (old_html is not None and current[field] != old_html):
+                    raise ValueError("The note field changed while saving. Reopen the drawing and try again.")
+                result = write_drawing(current_col, current, field, data, width, cfg, ref)
+                return current_col.update_note(current)
+
+            def saved(_changes=None) -> None:
+                if target and target.current_note() is not None:
+                    visible_note = target.current_note()
+                    if field in visible_note and visible_note[field] == old_html:
+                        visible_note[field] = result[0]
+                        target.editor.loadNote()
+                done(f'Drawing saved to "{field}".', result[1] if target and (whole or ref) else None)
+
+            if note.id:
+                CollectionOp(parent=mw, op=write).success(saved).failure(
+                    lambda exc: done(f"Could not save the drawing: {exc}")
+                ).run_in_background(initiator=target.editor if target else None)
+            else:
+                result = write_drawing(col, note, field, data, width, cfg, ref)
+                # Add mode owns the unsaved note and persists it when Add is pressed.
+                if target:
+                    target.editor.loadNote()
+                done(f'Drawing inserted into "{field}".', result[1] if whole or ref else None)
+
+        if target is None:
+            card = mw.reviewer.card if mw.state == "review" else None
+            if card is None:
+                done("No card is being reviewed.")
+                return
+            note = card.note()
+            field = choose_field(note, self)
+            current_card = mw.reviewer.card
+            if field and mw.col is col and mw.state == "review" and current_card and current_card.id == card.id:
+                persist(note, field)
+            else:
+                done("" if not field else "The review card changed.")
+            return
+
+        def flushed() -> None:
+            if self._saving is not token or self._destroying:
+                return
+            note = target.current_note()
+            if note is None or mw.col is not col:
+                done("The editor was closed or changed notes. Reopen the original note to save.")
+                return
+            try:
+                field = target.field or choose_field(note, self)
+                if not field:
+                    done("")
+                elif field not in note or target.current_note() is not note or mw.col is not col:
+                    done("The note or target field changed.")
+                else:
+                    persist(note, field, note[field])
+            except Exception as exc:
+                done(f"Could not save the drawing: {exc}")
+
+        if target.current_note() is None:
+            done("The editor was closed or changed notes. Reopen the original note to save.")
         else:
-            save_png_to_card(b64, self, width)
+            flushed_flag = False
+
+            def on_flushed() -> None:
+                nonlocal flushed_flag
+                flushed_flag = True
+                flushed()
+
+            try:
+                target.editor.call_after_note_saved(on_flushed)
+            except RuntimeError as exc:
+                done(f"Could not reach the editor: {exc}")
+            QTimer.singleShot(10000, lambda: None if flushed_flag else done("The editor did not respond. Try saving again."))
 
 
 def copy_png(b64: str, parent: Optional[QWidget] = None) -> None:
@@ -609,7 +759,7 @@ def choose_field(note, parent: Optional[QWidget] = None) -> Optional[str]:
         tooltip(f'This note has no "{wanted}" field - please choose one.', parent=parent or mw)
     default = names.index(wanted) if wanted in names else len(names) - 1
     field, ok = QInputDialog.getItem(
-        parent or mw, "Anki-Cali Draw", "Add the drawing to which field?", names, default, False
+        parent or mw, "Anki-Cali Draw Plus", "Add the drawing to which field?", names, default, False
     )
     return field if ok else None
 
@@ -620,69 +770,23 @@ def _merge(old: str, html: str, position: str) -> str:
     return f"{html}<br>{old}" if position == "start" else f"{old}<br>{html}"
 
 
-def save_png_to_card(b64: str, parent: Optional[QWidget] = None, width: Optional[int] = None) -> None:
-    """Store a base64 PNG in the media folder and put it in a field of the current note."""
-    parent = parent or mw
-    card = mw.reviewer.card if mw.state == "review" else None
-    if card is None:
-        tooltip("No card is being reviewed.", parent=parent)
-        return
-    try:
-        data = base64.b64decode(b64)
-    except Exception:
-        tooltip("Could not decode the exported image.", parent=parent)
-        return
-    note = card.note()
-    field = choose_field(note, parent)
-    if field is None:  # cancelled: nothing has been written yet
-        return
-    cfg = save_config()
-    filename = mw.col.media.write_data(f"cali-draw-{card.id}-{int(time.time())}.png", data)
-    html = _img_html(cfg["image_html"], filename, width)
-    note[field] = _merge(note[field], html, cfg["insert_position"])
-    update_note(parent=mw, note=note).success(
-        lambda _changes: tooltip(f'Drawing added to "{field}".', parent=parent)
-    ).run_in_background()
-
-
-def save_png_to_editor(
-    b64: str, editor, field_idx: Optional[int], parent: Optional[QWidget] = None, width: Optional[int] = None
-) -> None:
-    """Insert a base64 PNG into the note shown in a card editor (Add / Edit / Browser).
-
-    Uses the field that was being edited when the blackboard was opened; if none was,
-    the usual "ask / chosen field" setting decides.
-    """
-    parent = parent or mw
-    if getattr(editor, "web", None) is None or getattr(editor, "note", None) is None:
-        tooltip("The card editor was closed or has no note selected.", parent=parent)
-        return
-    try:
-        data = base64.b64decode(b64)
-    except Exception:
-        tooltip("Could not decode the exported image.", parent=parent)
-        return
-    cfg = save_config()
-
-    def insert() -> None:  # runs once the editor has flushed what you typed
-        note = editor.note
-        if note is None:
-            return
-        names = note.keys()
-        if field_idx is not None and 0 <= field_idx < len(names):
-            idx = field_idx
-        else:
-            chosen = choose_field(note, parent)
-            if chosen is None:
-                return
-            idx = names.index(chosen)
-        field = names[idx]
-        filename = mw.col.media.write_data(f"cali-draw-{int(time.time())}.png", data)
-        html = _img_html(cfg["image_html"], filename, width)
-        note[field] = _merge(note[field], html, cfg["insert_position"])
-        editor.loadNote(focusTo=idx)  # show it in the editor
-        if note.id:  # existing note (Edit / Browser): persist; Add dialog saves on "Add"
-            update_note(parent=editor.widget, note=note).run_in_background()
-        tooltip(f'Drawing added to "{field}".', parent=parent)
-
-    editor.call_after_note_saved(insert)
+def write_drawing(col, note, field, data, width, cfg, ref=None) -> tuple[str, DrawingRef]:
+    filename = media_name(data)
+    old = note[field]
+    if ref:
+        html = ref.replace(old, filename)
+        previous = drawing_refs(field, old)
+        matching = [r for r in previous if r.filename == ref.filename]
+        position = previous.index(matching[ref.occurrence])
+    else:
+        image = _img_html(cfg["image_html"], filename, width)
+        images = drawing_refs(field, image)
+        if len(images) != 1 or images[0].filename != filename:
+            raise ValueError('The image HTML template must insert one <img src="{filename}">.')
+        html = _merge(old, image, cfg["insert_position"])
+        position = 0 if cfg["insert_position"] in ("start", "replace") else -1
+    saved_ref = drawing_refs(field, html)[position]
+    if col.media.write_data(filename, data) != filename:
+        raise ValueError("Anki could not keep the drawing media filename.")
+    note[field] = html
+    return html, saved_ref

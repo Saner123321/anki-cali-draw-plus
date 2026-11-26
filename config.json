@@ -1,7 +1,7 @@
 {
-  "shortcut": "Ctrl+Shift+E",
-  "annotate_shortcut": "Ctrl+Shift+D",
-  "zen_shortcut": "Alt+Z",
+  "shortcut": "Ctrl+Alt+Shift+E",
+  "annotate_shortcut": "Ctrl+Alt+Shift+D",
+  "zen_shortcut": "Alt+Shift+Z",
   "placement": "beside",
   "width": 620,
   "board_opacity": 0.4,

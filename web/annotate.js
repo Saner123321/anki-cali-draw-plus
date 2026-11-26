@@ -1,9 +1,9 @@
-/* Anki-Cali Draw annotation overlay: injected into Anki's reviewer page by annotation.py (after core.js).
+/* Anki-Cali Draw Plus annotation overlay: injected into Anki's reviewer page by annotation.py (after core.js).
    Transparent canvas over the card, toolbar in a shadow root (card CSS can't touch it). */
 (function(){
 "use strict";
-if(window.__ankidraw)return;
-const C=window.AnkiDrawCore,P=C.P,svg=C.svg;
+if(window.__caliplus)return;
+const C=window.CaliPlusCore,P=C.P,svg=C.svg;
 
 const host=document.createElement("div");
 host.style.cssText="position:fixed;left:0;top:0;width:0;height:0;z-index:2147483000";
@@ -53,7 +53,7 @@ const swHost=C.el("div");swHost.style.cssText="display:flex;align-items:center;g
 const same=(a,b)=>String(a).toLowerCase()===String(b).toLowerCase();
 function markSwatch(){[...swHost.querySelectorAll(".ad-sw[data-c]")].forEach(b=>b.classList.toggle("on",same(b.getAttribute("data-c"),D.color)))}
 function pick(c){D.setColor(c,true);markSwatch()}
-function setFavs(f){S.favs=f;renderSwatches();picker.renderFavs();pycmd("ankidraw:favs:"+JSON.stringify(f))}
+function setFavs(f){S.favs=f;renderSwatches();picker.renderFavs();pycmd("caliplus:favs:"+JSON.stringify(f))}
 function sbtn(tip,fn,cls){const b=C.el("button",cls);b.setAttribute("data-tip",tip);b.onclick=fn;swHost.appendChild(b);return b}
 function renderSwatches(){
   swHost.innerHTML="";
@@ -84,9 +84,9 @@ btn(svg(P.undo),"Undo",D.undo);btn(svg(P.redo),"Redo",D.redo);
 const trashBtn=btn(svg(P.trash),"Clear annotations",()=>D.hasSel?D.delSel():D.clear());
 const eyeBtn=btn(svg(P.eye),"",()=>api.toggleZen());
 sep();
-btn(svg(P.copy)+"Copy","Copy the card with your annotations to the clipboard",()=>pycmd("ankidraw:copy"),"pri");
-btn(svg(P.gear),"Anki-Cali Draw settings",()=>pycmd("ankidraw:settings"));
-btn(svg(P.close),"Close annotation mode",()=>{api.hide();pycmd("ankidraw:closed")});
+btn(svg(P.copy)+"Copy","Copy the card with your annotations to the clipboard",()=>pycmd("caliplus:copy"),"pri");
+btn(svg(P.gear),"Anki-Cali Draw Plus settings",()=>pycmd("caliplus:settings"));
+btn(svg(P.close),"Close annotation mode",()=>{api.hide();pycmd("caliplus:closed")});
 function onSel(n){trashBtn.setAttribute("data-tip",n?"Delete selection":"Clear annotations")}
 
 /* ---- zen mode ---- */
@@ -108,7 +108,7 @@ function configure(o){
   if("zenKey" in o)updateZenTip();
   if("zen" in o&&o.zen!==zen){zenHidden=S.zen==="toggle";wrap.classList.remove("writing");applyZen()}
 }
-const api=window.__ankidraw={
+const api=window.__caliplus={
   show(o){configure(o||{});if(!shown){zenHidden=S.zen==="toggle";shown=true}applyZen();   // re-shows (new card) keep the zen state
     host.style.display="";bar.style.display="flex";setLive(true);D.resize()},
   hide(){D.endInput();picker.close();host.style.display="none"},

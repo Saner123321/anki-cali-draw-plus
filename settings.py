@@ -1,4 +1,4 @@
-"""Settings window for Anki-Cali Draw (Tools -> Anki-Cali Draw -> Settings...)."""
+"""Settings window for Anki-Cali Draw Plus (Tools -> Anki-Cali Draw Plus -> Settings...)."""
 from __future__ import annotations
 
 import json
@@ -69,7 +69,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget, on_saved: Optional[Callable[[dict, dict], None]] = None) -> None:
         super().__init__(parent)
         self._on_saved = on_saved
-        self.setWindowTitle("Anki-Cali Draw - Settings")
+        self.setWindowTitle("Anki-Cali Draw Plus - Settings")
         self.setMinimumWidth(470)
 
         tabs = QTabWidget()
@@ -239,7 +239,7 @@ class SettingsDialog(QDialog):
         lay.addWidget(self.show_board)
         lay.addWidget(self.show_annot)
         lay.addWidget(self.show_editor)
-        lay.addWidget(_hint("Hidden buttons stay available from Tools > Anki-Cali Draw, the card's right-click menu and the keyboard shortcuts. The editor button appears the next time you open an editor window."))
+        lay.addWidget(_hint("Hidden buttons stay available from Tools > Anki-Cali Draw Plus, the card's right-click menu and the keyboard shortcuts. The editor button appears the next time you open an editor window."))
         lay.addStretch(1)
         return w
 
@@ -248,8 +248,8 @@ class SettingsDialog(QDialog):
         save = {**DEFAULT_SAVE, **(cfg.get("save_to_card") or {})}
         _select(self.theme, cfg.get("theme", "auto"))
         _select(self.persist, cfg.get("persistence", "clear_on_next"))
-        self.k_board.setKeySequence(QKeySequence(cfg.get("shortcut", "Ctrl+Shift+E")))
-        self.k_annot.setKeySequence(QKeySequence(cfg.get("annotate_shortcut", "Ctrl+Shift+D")))
+        self.k_board.setKeySequence(QKeySequence(cfg.get("shortcut", "Ctrl+Alt+Shift+E")))
+        self.k_annot.setKeySequence(QKeySequence(cfg.get("annotate_shortcut", "Ctrl+Alt+Shift+D")))
         _select(self.placement, cfg.get("placement", "beside"))
         self.width_px.setValue(int(cfg.get("width", 620)))
         self.opacity.setValue(int(round(float(cfg.get("board_opacity", 0.4)) * 100)))
@@ -269,7 +269,7 @@ class SettingsDialog(QDialog):
         except (TypeError, ValueError):
             self.cursor_size.setValue(24)
         _select(self.zen_mode, cfg.get("zen_style", "writing"))
-        self.k_zen.setKeySequence(QKeySequence(cfg.get("zen_shortcut", "Alt+Z")))
+        self.k_zen.setKeySequence(QKeySequence(cfg.get("zen_shortcut", "Alt+Shift+Z")))
         self.show_board.setChecked(bool(cfg.get("show_board_button", True)))
         self.show_annot.setChecked(bool(cfg.get("show_annotate_button", True)))
         self.show_editor.setChecked(bool(cfg.get("show_editor_button", True)))

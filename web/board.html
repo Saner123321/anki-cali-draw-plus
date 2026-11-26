@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>Anki-Cali Draw</title>
+<title>Anki-Cali Draw Plus</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:transparent;touch-action:none}
 /* background layer: its opacity is the 'blackboard opacity'; ink and toolbars stay solid */
@@ -27,10 +27,11 @@ body.dark{--bg:#121212}
 <div id="toast"></div>
 <script>/*SETTINGS*/</script>
 <script>/*CORE*/</script>
+<script>/*SCENE*/</script>
 <script>
 (function(){
 "use strict";
-const C=AnkiDrawCore,P=C.P,svg=C.svg;
+const C=CaliPlusCore,P=C.P,svg=C.svg;
 const S=Object.assign({theme:"light",opacity:1,scale:2,exportDark:false,exportBackground:true,pressure:.7,zen:"writing",zenKey:"",
   favs:["#e03131","#1971c2","#2f9e44","#f08c00","#9c36b5"]},window.ANKI_SETTINGS||{});
 const send=c=>{typeof pycmd==="function"?pycmd(c):console.warn(c.slice(0,40))};
@@ -96,9 +97,10 @@ wbox.appendChild(wdot);wbox.appendChild(ws.el);wbox.appendChild(wl);$("props").a
 
 /* ---------- actions ---------- */
 const copyBtn=btn($("acts"),svg(P.copy)+"Copy PNG","Copy to clipboard as PNG",()=>exportPng("copy"),"txt");
-const saveBtn=btn($("acts"),svg(P.save)+"Save to card","Export PNG and put it into the note",()=>exportPng("save"),"pri");
+let session=0,editing=false,baseline="",pendingSnapshot=null;
+const saveBtn=btn($("acts"),svg(P.save)+"Save to card","Save an editable drawing to the note",saveDrawing,"pri");
 function onSel(n){
-  saveBtn.lastChild.nodeValue=saveBase+(n?" (selection)":"");
+  saveBtn.lastChild.nodeValue=saveBase+(n&&!editing?" (selection)":"");
   copyBtn.lastChild.nodeValue=n?"Copy selection":"Copy PNG";
   trashBtn.setAttribute("data-tip",n?"Delete selection":"Clear canvas");
 }
@@ -153,16 +155,23 @@ function exportPng(kind){
   const list=D.list();
   if(!list.length){toast("Canvas is empty");return}
   const b=D.bounds(list),pad=24,x0=b[0],y0=b[1],w=b[2]-b[0]+2*pad,h=b[3]-b[1]+2*pad;
-  // "Size" = how large the picture shows on the card (1x = as drawn). Saved pictures are rendered at
-  // least 2x for crispness and given an explicit width; a pasted copy has exactly that many pixels.
-  const want=kind==="copy"?S.scale:Math.max(2,S.scale);
-  const px=Math.max(.25,Math.min(want,8192/Math.max(w,h),Math.sqrt(5e7/(w*h))));
-  const c=document.createElement("canvas");c.width=Math.ceil(w*px);c.height=Math.ceil(h*px);
+  const px=Math.min(S.scale,8192/Math.max(w,h),Math.sqrt(5e7/(w*h)));
+  const c=document.createElement("canvas");c.width=Math.max(1,Math.ceil(w*px));c.height=Math.max(1,Math.ceil(h*px));
   const g=c.getContext("2d");
   if(S.exportBackground){g.fillStyle=S.exportDark?"#121212":"#fff";g.fillRect(0,0,c.width,c.height)}
   g.setTransform(px,0,0,px,(pad-x0)*px,(pad-y0)*px);
   for(const e of list)D.drawEl(g,e,S.exportDark);
   send("calidraw:"+kind+":"+Math.max(1,Math.round(w*S.scale))+":"+c.toDataURL("image/png").split(",")[1]);
+}
+
+function saveDrawing(){
+  if(pendingSnapshot!==null)return;
+  D.finish();
+  const all=D.list(true),list=D.list(editing);
+  if(!list.length&&!editing){toast("Canvas is empty");return}
+  const image=CaliPlusScene.exportSvg(D,list,S);
+  pendingSnapshot=D.dump();saveBtn.disabled=true;
+  send("calidraw:save:"+JSON.stringify({session,whole:all.length===list.length,...image}));
 }
 
 /* ---------- API used by Python ---------- */
@@ -178,6 +187,18 @@ window.ankiBridge={
     if("zen" in o&&o.zen!==zen){zenHidden=S.zen==="toggle";document.body.classList.remove("writing");applyZen();send("calidraw:zen:"+(zenHidden?1:0))}
   },
   setSaveLabel(t){saveBase=t;onSel(D.hasSel?1:0)},
+  beginSession(id,scene,isEdit){
+    session=id;editing=isEdit;D.load(scene);D.fit();
+    if(D.view.z>1)D.zoomAt(innerWidth/2,innerHeight/2,1);
+    baseline=D.dump();pendingSnapshot=null;saveBtn.disabled=false;
+    saveBase=editing?"Update drawing":"Insert into note";onSel(0);
+  },
+  isDirty(){D.finish();return D.dump()!==baseline},
+  saved(id,bound){
+    if(id!==session)return;
+    if(bound){baseline=pendingSnapshot;editing=true;saveBase="Update drawing"}
+    pendingSnapshot=null;saveBtn.disabled=false;onSel(D.hasSel?1:0);
+  },
   setTheme(t){document.body.classList.toggle("dark",t==="dark");D.redraw()},
   toggleZen:toggleZen,
   nudge(dy){D.nudge(0,dy)},                             // the title bar was hidden/shown: keep the drawing where it was

@@ -1,4 +1,4 @@
-"""Anki-Cali Draw – add-on entry point.
+"""Anki-Cali Draw Plus – add-on entry point.
 
 Two drawing tools for the reviewer:
   * Blackboard  (blackboard.py)  – a frameless scratchpad window beside the card
@@ -12,16 +12,18 @@ import json
 from typing import Optional
 
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QKeySequence, QShortcut
+from aqt.qt import QAction, QInputDialog, QKeySequence, QShortcut
 from aqt.utils import showInfo, tooltip
 
 from .annotation import AnnotationOverlay
 from .blackboard import BlackboardWindow, get_config
+from .drawing_media import drawing_refs, read_scene
 from .settings import SettingsDialog
 
-NAME = "Anki-Cali Draw"
+NAME = "Anki-Cali Draw Plus"
 
 _board: Optional[BlackboardWindow] = None
+_editor_board: Optional[BlackboardWindow] = None
 _board_action: Optional[QAction] = None
 _annot_action: Optional[QAction] = None
 _zen_action: Optional[QAction] = None
@@ -34,11 +36,11 @@ _SVG = (
     "stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>{}</svg>"
 )
 TOOLBAR_ICONS = {
-    "ankicali_board": _SVG.format(  # easel with a scribble
+    "caliplus_board": _SVG.format(  # easel with a scribble
         "<rect x='3' y='4' width='18' height='13' rx='2'/><path d='M8 21l2-4M16 21l-2-4'/>"
         "<path d='M7 12c2-4 3 2 5-1s3 1 5-2'/>"
     ),
-    "ankicali_annotate": _SVG.format(  # card with a pen
+    "caliplus_annotate": _SVG.format(  # card with a pen
         "<rect x='3' y='3' width='14' height='18' rx='2'/><path d='M7 8h6M7 12h3'/>"
         "<path d='M13 19l6.5-6.5a1.8 1.8 0 0 1 2.5 2.5L15.5 21.5 12 22z'/>"
     ),
@@ -71,14 +73,55 @@ def toggle_board() -> None:
 
 
 def open_from_editor(editor) -> None:
-    """Draw while editing a note (Add / Edit Current / Browser)."""
-    global _board
-    if getattr(editor, "note", None) is None:
+    note = getattr(editor, "note", None)
+    if note is None:
         tooltip(f"{NAME}: select or open a note first.")
         return
-    if _board is None:
-        _board = BlackboardWindow(on_toggle=toggle_board, on_settings=open_settings)
-    _board.show_for_editor(editor)
+    idx = editor.currentField
+    if idx is None:
+        idx = getattr(editor, "last_field_index", None)
+    names = note.keys()
+    field = names[idx] if idx is not None and 0 <= idx < len(names) else None
+    _show_editor_board(editor, note, field)
+
+
+def edit_from_editor(editor) -> None:
+    note = getattr(editor, "note", None)
+    col = mw.col
+    if note is None or col is None:
+        tooltip(f"{NAME}: select or open a note first.")
+        return
+
+    def open_drawing() -> None:
+        if mw.col is not col or editor.note is not note or getattr(editor, "web", None) is None:
+            return
+        refs = [ref for field in note.keys() for ref in drawing_refs(field, note[field])]
+        if not refs:
+            tooltip("This note has no editable Cali Draw Plus drawings.", parent=editor.widget)
+            return
+        ref = refs[0]
+        if len(refs) > 1:
+            labels = [f"{i+1}. {ref.field} ({ref.filename[10:18]})" for i, ref in enumerate(refs)]
+            chosen, ok = QInputDialog.getItem(editor.widget, NAME, "Open which drawing?", labels, 0, False)
+            if not ok:
+                return
+            ref = refs[labels.index(chosen)]
+        try:
+            scene = read_scene(col, ref.filename)
+        except ValueError as exc:
+            tooltip(str(exc), parent=editor.widget)
+            return
+        if mw.col is col and editor.note is note:
+            _show_editor_board(editor, note, ref.field, ref, scene)
+
+    editor.call_after_note_saved(open_drawing)
+
+
+def _show_editor_board(editor, note, field, drawing=None, scene="") -> None:
+    global _editor_board
+    if _editor_board is None:
+        _editor_board = BlackboardWindow(on_toggle=lambda: _editor_board.hide_panel(), on_settings=open_settings)
+    _editor_board.show_for_editor(editor, note, field, drawing, scene)
 
 
 def toggle_zen() -> None:
@@ -89,6 +132,9 @@ def toggle_zen() -> None:
         done = True
     if _board is not None and _board.isVisible():
         _board.toggle_zen()
+        done = True
+    if _editor_board is not None and _editor_board.isVisible():
+        _editor_board.toggle_zen()
         done = True
     if not done:
         tooltip(f"{NAME}: open the blackboard or annotation mode first.")
@@ -126,16 +172,18 @@ def _on_state_change(new_state: str, old_state: str) -> None:
 
 def _on_theme_change(*_args) -> None:
     _overlay.apply_theme()
-    if _board is not None:
-        _board.apply_theme()
+    for board in (_board, _editor_board):
+        if board is not None:
+            board.apply_theme()
 
 
 def _on_profile_close() -> None:
-    global _board
+    global _board, _editor_board
     _overlay.reset()
-    if _board is not None:
-        _board.destroy_for_good()
-        _board = None
+    for board in (_board, _editor_board):
+        if board is not None:
+            board.destroy_for_good()
+    _board = _editor_board = None
 
 
 def _add_editor_button(buttons: list, editor) -> None:
@@ -145,11 +193,22 @@ def _add_editor_button(buttons: list, editor) -> None:
     buttons.append(
         editor.addButton(
             None,
-            "ankicali_editor",
+            "caliplus_editor",
             open_from_editor,
             tip=f"{NAME}: draw and insert into this note",
-            label=TOOLBAR_ICONS["ankicali_board"],
-            id="ankicali_editor",
+            label=TOOLBAR_ICONS["caliplus_board"],
+            id="caliplus_editor",
+            rightside=False,
+        )
+    )
+    buttons.append(
+        editor.addButton(
+            None,
+            "caliplus_edit",
+            edit_from_editor,
+            tip=f"{NAME}: reopen a saved drawing in this note",
+            label=TOOLBAR_ICONS["caliplus_annotate"],
+            id="caliplus_edit",
             rightside=False,
         )
     )
@@ -166,21 +225,21 @@ def _add_toolbar_links(links: list, toolbar) -> None:
     if cfg.get("show_board_button", True):
         links.append(
             toolbar.create_link(
-                "ankicali_board",
+                "caliplus_board",
                 "Blackboard",
                 toggle_board,
                 tip=f"{NAME}: blackboard",
-                id="ankicali_board",
+                id="caliplus_board",
             )
         )
     if cfg.get("show_annotate_button", True):
         links.append(
             toolbar.create_link(
-                "ankicali_annotate",
+                "caliplus_annotate",
                 "Annotate",
                 toggle_annotation,
                 tip=f"{NAME}: draw on the card",
-                id="ankicali_annotate",
+                id="caliplus_annotate",
             )
         )
 
@@ -195,9 +254,9 @@ def _style_toolbar(web_content, context) -> None:
     if not (cfg.get("show_board_button", True) or cfg.get("show_annotate_button", True)):
         return
     web_content.head += (
-        "<style>#ankicali_board,#ankicali_annotate{display:inline-flex!important;align-items:center;"
+        "<style>#caliplus_board,#caliplus_annotate{display:inline-flex!important;align-items:center;"
         "padding:2px 6px!important;margin:0 1px;border-radius:6px}"
-        "#ankicali_board:hover,#ankicali_annotate:hover{background:rgba(127,127,127,.22)}</style>"
+        "#caliplus_board:hover,#caliplus_annotate:hover{background:rgba(127,127,127,.22)}</style>"
     )
     web_content.body += (
         "<script>(function(){var I=" + json.dumps(TOOLBAR_ICONS) + ";"
@@ -209,8 +268,9 @@ def _on_config_updated(_cfg: dict) -> None:
     for name, (shortcut, default) in _shortcuts.items():
         shortcut.setKey(QKeySequence(_key(name, default)))
     _overlay.apply_settings()  # theme, pressure, zen mode, favourite colours
-    if _board is not None:
-        _board.apply_config()
+    for board in (_board, _editor_board):
+        if board is not None:
+            board.apply_config()
 
 
 def _refresh_toolbar() -> bool:
@@ -235,6 +295,9 @@ _SETTING_LABELS = {
     "zen_style": "Zen mode",
     "pressure_enabled": "Pressure sensitivity",
     "pressure_strength": "Pressure strength",
+    "touch_mode": "Finger input",
+    "cursor_shape": "Pen cursor",
+    "cursor_size": "Cursor size",
     "placement": "Blackboard position",
     "width": "Blackboard width",
     "board_opacity": "Blackboard opacity",
@@ -291,9 +354,9 @@ def _setup() -> None:
     # Keyboard shortcuts are plain QShortcuts, not menu-item shortcuts: they work the same
     # but Qt does not print the key combination next to the menu entries.
     for name, default, fn in (
-        ("shortcut", "Ctrl+Shift+E", toggle_board),
-        ("annotate_shortcut", "Ctrl+Shift+D", toggle_annotation),
-        ("zen_shortcut", "Alt+Z", toggle_zen),
+        ("shortcut", "Ctrl+Alt+Shift+E", toggle_board),
+        ("annotate_shortcut", "Ctrl+Alt+Shift+D", toggle_annotation),
+        ("zen_shortcut", "Alt+Shift+Z", toggle_zen),
     ):
         sc = QShortcut(QKeySequence(_key(name, default)), mw)
         sc.activated.connect(fn)

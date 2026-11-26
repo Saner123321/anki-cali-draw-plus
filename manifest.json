@@ -1,6 +1,7 @@
 {
-  "package": "anki_cali_draw",
-  "name": "Anki-Cali Draw",
+  "package": "anki_cali_draw_plus",
+  "name": "Anki-Cali Draw Plus",
   "min_point_version": 50,
+  "human_version": "0.1.0",
   "conflicts": []
 }

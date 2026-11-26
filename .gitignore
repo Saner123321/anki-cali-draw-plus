@@ -1,0 +1,5 @@
+__pycache__/
+/dist/
+/.anki-test/
+/meta.json
+/user_files/

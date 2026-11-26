@@ -17,7 +17,7 @@
 
 Plus 默认会在顶部工具栏和卡片编辑器隐藏重复的原版按钮。原版 `1205964508` 可以保持启用，仍在 **工具 → 插件 → 检查更新** 里接收 AnkiWeb 更新。要同时显示两套按钮，在 Plus 的 **Settings… → Toolbar** 取消勾选 **Hide duplicate buttons from the original Anki-Cali Draw**。
 
-Plus 有自己的 **工具 → Anki-Cali Draw Plus → Check for updates (GitHub)…** 入口。发现新版后确认安装，再重启 Anki。更新检查使用 GitHub Releases，校验安装包的 SHA-256，并沿用 Anki 安装器保留插件设置。平板和电脑都可以独立检查和更新。已经安装 0.1.0 的设备需要先从 GitHub 安装一次 0.1.1 或更新版本。
+Plus 有自己的 **工具 → Anki-Cali Draw Plus → Check for updates (GitHub)…** 入口。发现新版后确认安装，再重启 Anki。更新优先读取最新 Release 附带的版本和校验文件，校验安装包的 SHA-256，并沿用 Anki 安装器保留插件设置。平板和电脑都可以独立检查和更新。已经安装 0.1.0 的设备需要先从 GitHub 安装一次最新版。
 
 复习时可用 `Ctrl+Alt+Shift+E` 打开 Plus 黑板，或用 `Ctrl+Alt+Shift+D` 打开贴在卡片上的批注层。批注层里手指负责滚动卡片，笔迹随卡片滚动。捏合缩放适用于黑板。`Alt+Shift+Z` 切换工具显隐。**Copy PNG** 可把当前选择或整张画布复制成普通图片。
 

@@ -1,4 +1,5 @@
 """Build the desktop add-on archive without machine-specific state."""
+import hashlib
 import json
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -16,6 +17,8 @@ def build() -> Path:
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         for name in FILES:
             archive.write(ROOT / name, name)
+    descriptor = {"version": version, "sha256": hashlib.sha256(output.read_bytes()).hexdigest()}
+    output.with_name("update.json").write_text(json.dumps(descriptor, indent=2) + "\n", encoding="utf-8")
     return output
 
 

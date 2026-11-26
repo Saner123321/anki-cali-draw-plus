@@ -21,6 +21,7 @@ RELEASES = f"https://github.com/{REPO}/releases"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
 PACKAGE = "anki_cali_draw_plus"
 MAX_DOWNLOAD = 2 * 1024 * 1024
+_ASSET_HOSTS = {"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"}
 _VERSION = re.compile(r"(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})\.(0|[1-9][0-9]{0,5})")
 _ZIP_PATH = re.compile(r"(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_][a-zA-Z0-9_.-]*")
 _LOG = logging.getLogger(__name__)
@@ -63,15 +64,24 @@ def _validate_addon(data, version):
             raise ValueError("Corrupt add-on archive")
 
 
-def find_update(current):
+def _release_descriptor():
+    # The release asset stays available when GitHub's unauthenticated REST API hits its rate limit.
+    try:
+        raw = _download(f"{RELEASES}/latest/download/update.json", 4096, _ASSET_HOSTS, "application/octet-stream")
+    except OSError:
+        return _api_release_descriptor()
+    descriptor = json.loads(raw)
+    return descriptor["version"], descriptor["sha256"]
+
+
+def _api_release_descriptor():
     raw = _download(LATEST, 256 * 1024, {"api.github.com"}, "application/vnd.github+json")
     release = json.loads(raw)
     tag = release["tag_name"]
     if not tag.startswith("v") or release["draft"] or release["prerelease"]:
         raise ValueError("GitHub did not return a stable release")
     version = tag[1:]
-    if _version(version) <= _version(current):
-        return None
+    _version(version)
     name = f"Anki-Cali-Draw-Plus-{version}.ankiaddon"
     expected_url = f"{RELEASES}/download/{tag}/{name}"
     asset = next((asset for asset in release["assets"] if asset.get("name") == name), None)
@@ -80,9 +90,18 @@ def find_update(current):
     digest = asset.get("digest")
     if not isinstance(digest, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
         raise ValueError("GitHub release is missing a valid SHA-256 checksum")
-    data = _download(expected_url, MAX_DOWNLOAD, {"github.com", "release-assets.githubusercontent.com", "objects.githubusercontent.com"},
-                     "application/octet-stream")
-    if f"sha256:{hashlib.sha256(data).hexdigest()}" != digest:
+    return version, digest.removeprefix("sha256:")
+
+
+def find_update(current):
+    version, digest = _release_descriptor()
+    if _version(version) <= _version(current):
+        return None
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise ValueError("GitHub release is missing a valid SHA-256 checksum")
+    url = f"{RELEASES}/download/v{version}/Anki-Cali-Draw-Plus-{version}.ankiaddon"
+    data = _download(url, MAX_DOWNLOAD, _ASSET_HOSTS, "application/octet-stream")
+    if hashlib.sha256(data).hexdigest() != digest:
         raise ValueError("The download did not match its GitHub checksum")
     _validate_addon(data, version)
     return version, data

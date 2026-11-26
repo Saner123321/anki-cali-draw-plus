@@ -241,6 +241,10 @@ def github_update(mw, addon):
     action = next(action for action in menu.actions() if "GitHub" in action.text())
     messages = []
     ask, info, warning, open_link = updater.askUser, updater.showInfo, updater.showWarning, updater.openLink
+    api_descriptor = updater._api_release_descriptor
+
+    def reject_api():
+        raise AssertionError("The published update should work without the GitHub REST API")
 
     def approve(message, **kwargs):
         if message.startswith("Install Anki-Cali Draw Plus "):
@@ -251,6 +255,7 @@ def github_update(mw, addon):
     updater.askUser = approve
     updater.showInfo = updater.showWarning = lambda message, **kwargs: messages.append(message)
     updater.openLink = lambda url: messages.append(url)
+    updater._api_release_descriptor = reject_api
     try:
         action.trigger()
         until(lambda: messages, "GitHub update menu completed", seconds=50)
@@ -263,6 +268,7 @@ def github_update(mw, addon):
         assert updater.find_update(version) is None
     finally:
         updater.askUser, updater.showInfo, updater.showWarning, updater.openLink = ask, info, warning, open_link
+        updater._api_release_descriptor = api_descriptor
 
 
 def run():

@@ -2,7 +2,7 @@
   "package": "anki_cali_draw_plus",
   "name": "Anki-Cali Draw Plus",
   "min_point_version": 50,
-  "human_version": "0.1.2",
+  "human_version": "0.1.3",
   "homepage": "https://github.com/Saner123321/anki-cali-draw-plus",
   "conflicts": []
 }

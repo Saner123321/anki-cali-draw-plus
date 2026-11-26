@@ -205,6 +205,11 @@ window.ankiBridge={
   dump:D.dump,load:D.load
 };
 setTool("pen");D.resize();onSel(0);applyZen();updateZenTip();
-send("calidraw:ready");if(zenHidden)send("calidraw:zen:1");
+function connectBridge(){
+  // Anki injects pycmd asynchronously after the page scripts have run.
+  if(typeof pycmd!=="function"){setTimeout(connectBridge,25);return}
+  send("calidraw:ready");if(zenHidden)send("calidraw:zen:1");
+}
+connectBridge();
 })();
 </script></body></html>

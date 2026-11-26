@@ -33,7 +33,7 @@ def load_scene(svg: bytes) -> str:
         document = json.loads(metadata.text or "")
     except (ElementTree.ParseError, UnicodeError, ValueError, RecursionError) as exc:
         raise ValueError("Could not read the embedded drawing data.") from exc
-    if not isinstance(document, dict) or document.get("version") != 1:
+    if not isinstance(document, dict) or type(document.get("version")) is not int or document["version"] != 1:
         raise ValueError("Unsupported drawing format version.")
     strokes = document.get("strokes")
     if not isinstance(strokes, list):

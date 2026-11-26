@@ -351,7 +351,6 @@ function engine(o){
   /* ---- pointer input (mouse, touch, stylus) ---- */
   const world=e=>{sync();return[(e.clientX-view.x)/view.z,(e.clientY-view.y)/view.z]};
   const rawPressure=e=>Number.isFinite(e.pressure)?clamp(e.pressure,0,1):.5;
-  const pressureOf=e=>rawPressure(e)||.5;
   const busy=b=>{if(hooks.busy)hooks.busy(b)};
   const capture=id=>{try{top.setPointerCapture(id)}catch(_){}};
   const release=id=>{if(top.hasPointerCapture(id))top.releasePointerCapture(id)};
@@ -407,9 +406,10 @@ function engine(o){
     if(tool==="select"){startSelect(e,x,y);return}
     const w=(tool==="hl"?Math.min(80,width*5):width)/view.z;   // on-screen thickness stays what you picked, at any zoom
     const usePressure=e.pointerType==="pen"&&S.pressure>0&&tool==="pen";
+    const raw=rawPressure(e);
     const id=newId();
     drag={k:"draw",el:(tool==="pen"||tool==="hl")
-      ?{id:id,t:"pen",hl:tool==="hl",c:color,w:w,pen:usePressure,ps:usePressure?S.pressure:0,p:[[x,y,pressureOf(e),rawPressure(e)]]}
+      ?{id:id,t:"pen",hl:tool==="hl",c:color,w:w,pen:usePressure,ps:usePressure?S.pressure:0,p:[[x,y,raw||.5,raw]]}
       :{id:id,t:tool,c:color,w:width/view.z,p:[[x,y],[x,y]]}};
   });
   function startSelect(e,x,y){
@@ -441,7 +441,7 @@ function engine(o){
     if(d.k==="draw"){
       const evs=e.getCoalescedEvents?e.getCoalescedEvents():[];
       for(const q of evs.length?evs:[e]){const w=world(q);
-        if(d.el.t==="pen"){const last=d.el.p[d.el.p.length-1],pr=pressureOf(q),sm=last[2]===undefined?pr:last[2]*.55+pr*.45;d.el.p.push([w[0],w[1],sm,rawPressure(q)])}
+        if(d.el.t==="pen"){const last=d.el.p[d.el.p.length-1],raw=rawPressure(q),pr=raw||.5,sm=last[2]===undefined?pr:last[2]*.55+pr*.45;d.el.p.push([w[0],w[1],sm,raw])}
         else d.el.p[1]=[w[0],w[1]]}
     }else if(d.k==="move"){d.dx=x-d.x0;d.dy=y-d.y0}
     else if(d.k==="marquee"){d.x1=x;d.y1=y}

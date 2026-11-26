@@ -658,25 +658,29 @@ class BlackboardWindow(QWidget):
 
         def persist(note, field, old_html=None) -> None:
             ref = target.drawing if target else None
+            nid = note.id
             result = None
 
             def write(current_col):
                 nonlocal result
-                current = current_col.get_note(note.id)
+                if current_col is not col:
+                    raise ValueError("The collection changed before the drawing was saved.")
+                current = current_col.get_note(nid)
                 if field not in current or (old_html is not None and current[field] != old_html):
                     raise ValueError("The note field changed while saving. Reopen the drawing and try again.")
                 result = write_drawing(current_col, current, field, data, width, cfg, ref)
                 return current_col.update_note(current)
 
             def saved(_changes=None) -> None:
-                if target and target.current_note() is not None:
-                    visible_note = target.current_note()
-                    if field in visible_note and visible_note[field] == old_html:
+                try:
+                    visible_note = target.current_note() if target else None
+                    if visible_note is not None and field in visible_note and visible_note[field] == old_html:
                         visible_note[field] = result[0]
                         target.editor.loadNote()
-                done(f'Drawing saved to "{field}".', result[1] if target and (whole or ref) else None)
+                finally:
+                    done(f'Drawing saved to "{field}".', result[1] if target and (whole or ref) else None)
 
-            if note.id:
+            if nid:
                 CollectionOp(parent=mw, op=write).success(saved).failure(
                     lambda exc: done(f"Could not save the drawing: {exc}")
                 ).run_in_background(initiator=target.editor if target else None)

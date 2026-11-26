@@ -127,6 +127,15 @@ def pressure_value() -> float:
         return 0.7
 
 
+def input_settings() -> dict:
+    cfg = get_config()
+    return {
+        "touchMode": cfg.get("touch_mode", "pan"),
+        "cursorShape": cfg.get("cursor_shape", "cross"),
+        "cursorSize": cfg.get("cursor_size", 24),
+    }
+
+
 def zen_mode() -> str:
     # key is "zen_style" (not the old "zen_mode") so that everyone gets the new default: hide while writing
     mode = get_config().get("zen_style", "writing")
@@ -247,6 +256,7 @@ class BlackboardWindow(QWidget):
         return {
             "opacity": self._opacity(),
             "pressure": pressure_value(),
+            **input_settings(),
             "zen": zen_mode(),
             "zenKey": get_config().get("zen_shortcut", "Alt+Z"),
             "favs": get_favorites(),

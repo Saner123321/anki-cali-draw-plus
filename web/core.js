@@ -173,10 +173,16 @@ function makePicker(h){
 }
 
 /* ------------------------------------------------------------------ the drawing engine */
-const CROSS=(()=>{
-  const s="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><g fill='none' stroke-linecap='round'>"+
-    "<path d='M12 3v6M12 15v6M3 12h6M15 12h6' stroke='#fff' stroke-width='3.4'/><path d='M12 3v6M12 15v6M3 12h6M15 12h6' stroke='#111' stroke-width='1.4'/></g></svg>";
-  return'url("data:image/svg+xml;utf8,'+encodeURIComponent(s)+'") 12 12, crosshair'})();
+function penCursor(shape,size){
+  if(shape==="hidden")return "none";
+  size=clamp(Math.round(Number(size)||24),6,48);
+  const mark=shape==="dot"?"<circle cx='12' cy='12' r='4' fill='#111' stroke='#fff' stroke-width='2'/>":
+    shape==="ring"?"<circle cx='12' cy='12' r='8' stroke='#fff' stroke-width='4'/><circle cx='12' cy='12' r='8' stroke='#111' stroke-width='2'/>":
+    "<path d='M12 3v6M12 15v6M3 12h6M15 12h6' stroke='#fff' stroke-width='3.4'/><path d='M12 3v6M12 15v6M3 12h6M15 12h6' stroke='#111' stroke-width='1.4'/>";
+  const svg="<svg xmlns='http://www.w3.org/2000/svg' width='"+size+"' height='"+size+"' viewBox='0 0 24 24'><g fill='none' stroke-linecap='round'>"+mark+"</g></svg>";
+  const center=Math.floor(size/2);
+  return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'") '+center+' '+center+', crosshair';
+}
 const RESIZE_CURSOR={nw:"nwse-resize",se:"nwse-resize",ne:"nesw-resize",sw:"nesw-resize",n:"ns-resize",s:"ns-resize",e:"ew-resize",w:"ew-resize",rot:"grab"};
 
 function engine(o){
@@ -184,7 +190,10 @@ function engine(o){
   const bctx=base.getContext("2d"),tctx=top.getContext("2d");
   const ZMIN=.25,ZMAX=100,ER=10;
   let els=[],undo=[],redo=[],drag=null,sel=new Set(),selBox=null,nextId=1;
-  let tool="pen",color="auto",width=3,dpr=1,sawPen=false,space=false,showSel=true;
+  let tool="pen",color="auto",width=3,dpr=1,space=false,showSel=true;
+  let owner=null, lastPen=-Infinity, touchFrame=0, touchStarted=false;
+  let cursor=penCursor(S.cursorShape,S.cursorSize);
+  const touches=new Map();
   const newId=()=>nextId++;
   const isDark=()=>o.isDark();
   const accent=()=>o.accent()||"#6965db";
@@ -234,7 +243,7 @@ function engine(o){
   const pruneSel=()=>{const ids=new Set(els.map(e=>e.id));sel=new Set([...sel].filter(i=>ids.has(i)))};
   function doUndo(){finish();if(undo.length){redo.push(els);els=undo.pop();pruneSel();redraw();updateSel()}}
   function doRedo(){finish();if(redo.length){undo.push(els);els=redo.pop();pruneSel();redraw();updateSel()}}
-  function doClear(){if(els.length){commit([]);sel=new Set();redraw();updateSel()}}
+  function doClear(){finish();if(els.length){commit([]);sel=new Set();redraw();updateSel()}}
   function delSel(){if(sel.size){commit(els.filter(e=>!sel.has(e.id)));sel=new Set();redraw();updateSel()}}
 
   /* ---- geometry ---- */
@@ -314,7 +323,7 @@ function engine(o){
   }
 
   /* ---- cursors: one consistent set everywhere ---- */
-  const setCursor=c=>{top.style.cursor=c};
+  const setCursor=c=>{if(top.style.cursor!==c)top.style.cursor=c};
   function updateCursor(x,y){
     if(tool==="eraser")return setCursor("none");
     if(tool==="hand")return setCursor(drag&&drag.k==="pan"?"grabbing":"grab");
@@ -326,7 +335,11 @@ function engine(o){
       if(h)return setCursor(RESIZE_CURSOR[h[0]]);
       const over=(selBox&&x>=selBox[0]&&x<=selBox[2]&&y>=selBox[1]&&y<=selBox[3])||els.some(e=>hitSelect(e,x,y));
       return setCursor(over?"move":"default")}
-    setCursor(CROSS);
+    setCursor(cursor);
+  }
+  function configureInput(){
+    cursor=penCursor(S.cursorShape,S.cursorSize);
+    updateCursor();
   }
   function moveRing(e){
     if(!ring)return;
@@ -337,24 +350,66 @@ function engine(o){
 
   /* ---- pointer input (mouse, touch, stylus) ---- */
   const world=e=>{sync();return[(e.clientX-view.x)/view.z,(e.clientY-view.y)/view.z]};
-  const pressureOf=e=>e.pressure>0?e.pressure:.5;
+  const rawPressure=e=>Number.isFinite(e.pressure)?clamp(e.pressure,0,1):.5;
+  const pressureOf=e=>rawPressure(e)||.5;
   const busy=b=>{if(hooks.busy)hooks.busy(b)};
+  const capture=id=>{try{top.setPointerCapture(id)}catch(_){}};
+  const release=id=>{if(top.hasPointerCapture(id))top.releasePointerCapture(id)};
+  const resetTouches=()=>{
+    const ids=[...touches.keys()];touches.clear();touchStarted=false;
+    for(const id of ids)release(id);
+  };
+  function moveTouch(e){
+    const point=touches.get(e.pointerId);
+    if(!point)return;
+    const pair=[...touches.values()];
+    const other=pair.find(p=>p!==point);
+    const dx=e.clientX-point.x,dy=e.clientY-point.y;
+    if(!other&&!touchStarted&&Math.hypot(dx,dy)<6)return;
+    touchStarted=true;
+    if(docMode){scrollBy(-dx/(other?2:1),-dy/(other?2:1))}
+    else if(other){
+      const cx=(point.x+other.x)/2,cy=(point.y+other.y)/2;
+      const distance=Math.hypot(point.x-other.x,point.y-other.y);
+      const nextDistance=Math.hypot(e.clientX-other.x,e.clientY-other.y);
+      const z=clamp(view.z*Math.max(1,nextDistance)/Math.max(1,distance),ZMIN,ZMAX);
+      view.x=cx+dx/2-(cx-view.x)*z/view.z;
+      view.y=cy+dy/2-(cy-view.y)*z/view.z;
+      view.z=z;
+    }else{view.x+=dx;view.y+=dy}
+    point.x=e.clientX;point.y=e.clientY;
+    if(!docMode&&!touchFrame)touchFrame=requestAnimationFrame(()=>{touchFrame=0;redraw()});
+  }
+  configureInput();
   top.addEventListener("pointerdown",e=>{
-    if(e.pointerType==="pen")sawPen=true;
-    if(e.pointerType==="touch"&&sawPen)return;           // palm rejection
-    if(e.pointerType==="touch"&&!e.isPrimary)return;     // extra fingers (never filter a stylus on this)
-    if(drag)finish();                                    // a release was missed earlier: close that stroke first
-    if(e.button>0&&e.pointerType==="mouse"&&e.button!==1)return;
-    try{top.setPointerCapture(e.pointerId)}catch(_){}
-    const xy=world(e),x=xy[0],y=xy[1];busy(true);
+    const pen=e.pointerType==="pen", touch=e.pointerType==="touch";
+    if(touch&&(owner||performance.now()-lastPen<120)){e.preventDefault();return}
+    if(touch&&S.touchMode!=="ink"){
+      e.preventDefault();
+      if(touches.size<2){touches.set(e.pointerId,{x:e.clientX,y:e.clientY});capture(e.pointerId)}
+      return;
+    }
+    if(touch&&!e.isPrimary)return;
+    if(!pen&&e.button>0&&e.button!==1)return;
+    if(owner){
+      if(!pen||owner.type!=="touch")return;
+      finish(true);
+    }
+    if(pen){lastPen=performance.now();resetTouches()}
+    if(touches.size)return;
+    if(touchFrame){cancelAnimationFrame(touchFrame);touchFrame=0;redraw()}
+    owner={id:e.pointerId,type:e.pointerType};
+    capture(e.pointerId);
+    const xy=world(e),x=xy[0],y=xy[1];
     if(!docMode&&(e.button===1||tool==="hand"||space)){drag={k:"pan",sx:e.clientX-view.x,sy:e.clientY-view.y};updateCursor();return}
+    busy(true);
     if(tool==="eraser"){drag={k:"erase",snap:els};erase(x,y);return}
     if(tool==="select"){startSelect(e,x,y);return}
     const w=(tool==="hl"?Math.min(80,width*5):width)/view.z;   // on-screen thickness stays what you picked, at any zoom
     const usePressure=e.pointerType==="pen"&&S.pressure>0&&tool==="pen";
     const id=newId();
     drag={k:"draw",el:(tool==="pen"||tool==="hl")
-      ?{id:id,t:"pen",hl:tool==="hl",c:color,w:w,pen:usePressure,ps:usePressure?S.pressure:0,p:[[x,y,pressureOf(e)]]}
+      ?{id:id,t:"pen",hl:tool==="hl",c:color,w:w,pen:usePressure,ps:usePressure?S.pressure:0,p:[[x,y,pressureOf(e),rawPressure(e)]]}
       :{id:id,t:tool,c:color,w:width/view.z,p:[[x,y],[x,y]]}};
   });
   function startSelect(e,x,y){
@@ -374,6 +429,8 @@ function engine(o){
     updateSel();drag={k:"move",x0:x,y0:y,dx:0,dy:0};redraw(sel);updateCursor();
   }
   top.addEventListener("pointermove",e=>{
+    if(e.pointerType==="touch"&&(!owner||e.pointerId!==owner.id)){moveTouch(e);return}
+    if((owner&&e.pointerId!==owner.id)||touches.size)return;
     moveRing(e);
     if(!drag){const xy=world(e);updateCursor(xy[0],xy[1]);return}
     if(e.pointerType==="mouse"&&e.buttons===0){finish();return}   // mouse only: stylus drivers often report buttons=0 while touching
@@ -382,9 +439,9 @@ function engine(o){
     const xy=world(e),x=xy[0],y=xy[1];
     if(d.k==="erase"){erase(x,y);return}
     if(d.k==="draw"){
-      const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
-      for(const q of evs){const w=world(q);
-        if(d.el.t==="pen"){const last=d.el.p[d.el.p.length-1],pr=pressureOf(q),sm=last[2]===undefined?pr:last[2]*.55+pr*.45;d.el.p.push([w[0],w[1],sm])}
+      const evs=e.getCoalescedEvents?e.getCoalescedEvents():[];
+      for(const q of evs.length?evs:[e]){const w=world(q);
+        if(d.el.t==="pen"){const last=d.el.p[d.el.p.length-1],pr=pressureOf(q),sm=last[2]===undefined?pr:last[2]*.55+pr*.45;d.el.p.push([w[0],w[1],sm,rawPressure(q)])}
         else d.el.p[1]=[w[0],w[1]]}
     }else if(d.k==="move"){d.dx=x-d.x0;d.dy=y-d.y0}
     else if(d.k==="marquee"){d.x1=x;d.y1=y}
@@ -398,9 +455,15 @@ function engine(o){
     }
     renderTop();
   });
-  function finish(){
+  function finish(discard=false){
+    const pointer=owner;owner=null;
+    if(pointer){
+      if(pointer.type==="pen")lastPen=performance.now();
+      release(pointer.id);busy(false);
+    }
     if(!drag)return;
-    const d=drag;drag=null;busy(false);
+    const d=drag;drag=null;
+    if(discard){if(d.k==="erase")els=d.snap;redraw();updateSel();updateCursor();return}
     if(d.k==="erase"){if(els!==d.snap){undo.push(d.snap);redo=[]}}
     else if(d.k==="draw"){
       const el=d.el;
@@ -417,11 +480,14 @@ function engine(o){
       sel=s}
     updateSel();updateCursor();
   }
-  ["pointerup","pointercancel"].forEach(n=>top.addEventListener(n,finish));
-  top.addEventListener("lostpointercapture",e=>{if(e.pointerType==="mouse")finish()});
+  function endPointer(e){
+    if(touches.delete(e.pointerId)&&!touches.size)touchStarted=false;
+    if(owner&&e.pointerId===owner.id)finish();
+  }
+  ["pointerup","pointercancel","lostpointercapture"].forEach(n=>top.addEventListener(n,endPointer));
   top.addEventListener("pointerleave",()=>{if(ring)ring.style.display="none"});
   top.addEventListener("contextmenu",e=>e.preventDefault());
-  addEventListener("blur",()=>{space=false;finish()});
+  addEventListener("blur",()=>{space=false;resetTouches();finish()});
   if(docMode)addEventListener("scroll",()=>redraw(),{passive:true});
   addEventListener("resize",resize);
 
@@ -434,6 +500,7 @@ function engine(o){
     view.z=z;view.x=innerWidth/2-(b[0]+w/2)*z;view.y=innerHeight/2-(b[1]+h/2)*z;redraw()}
   if(!docMode)top.addEventListener("wheel",e=>{
     e.preventDefault();
+    if(owner||touches.size)return;
     if(e.ctrlKey||e.metaKey)zoomAt(e.clientX,e.clientY,view.z*Math.exp(-e.deltaY*(e.deltaMode?.05:.0025)));
     else{view.x-=e.deltaX;view.y-=e.deltaY;redraw()}
   },{passive:false});
@@ -452,11 +519,12 @@ function engine(o){
     selectAll(){tool="select";sel=new Set(els.map(e=>e.id));updateSel();updateCursor()},
     deselect(){sel=new Set();updateSel()},
     hideSel(b){showSel=!b;renderTop()},
-    list(){return sel.size?selected():els},
+    list(all){return !all&&sel.size?selected():els},
     dump(){return els.length?JSON.stringify(els):""},
-    load(j){drag=null;undo=[];redo=[];sel=new Set();try{els=j?JSON.parse(j):[]}catch(_){els=[]}for(const e of els)e.id=newId();redraw();updateSel()},
+    load(j){resetTouches();finish(true);undo=[];redo=[];sel=new Set();try{els=j?JSON.parse(j):[]}catch(_){els=[]}for(const e of els)e.id=newId();redraw();updateSel()},
     nudge(dx,dy){view.x+=dx;view.y+=dy;redraw()},
-    updateCursor:updateCursor
+    updateCursor:updateCursor,configureInput:configureInput,
+    endInput(){resetTouches();finish()}
   };
 }
 

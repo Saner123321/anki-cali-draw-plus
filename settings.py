@@ -153,6 +153,11 @@ class SettingsDialog(QDialog):
         self.pressure_strength.setRange(0, 100)
         self.pressure_strength.setSuffix(" %")
         self.pressure_on.toggled.connect(self.pressure_strength.setEnabled)
+        self.touch_mode = _combo([("Pan / pinch", "pan"), ("Draw with a finger", "ink")])
+        self.cursor_shape = _combo([("Crosshair", "cross"), ("Dot", "dot"), ("Hollow circle", "ring"), ("Hidden", "hidden")])
+        self.cursor_size = QSpinBox()
+        self.cursor_size.setRange(6, 48)
+        self.cursor_size.setSuffix(" px")
         self.zen_mode = _combo(
             [
                 ("Hide the tools while I'm writing (default)", "writing"),
@@ -163,7 +168,10 @@ class SettingsDialog(QDialog):
         self.k_zen = QKeySequenceEdit()
         form.addRow(self.pressure_on)
         form.addRow("Strength:", self.pressure_strength)
-        form.addRow(_hint("Needs a pressure-sensitive pen. Mouse and finger strokes always have a constant width."))
+        form.addRow(_hint("Needs a pressure-sensitive pen. Mouse and finger strokes have a constant width."))
+        form.addRow("Finger input:", self.touch_mode)
+        form.addRow("Pen cursor:", self.cursor_shape)
+        form.addRow("Cursor size:", self.cursor_size)
         form.addRow("Zen mode:", self.zen_mode)
         form.addRow("Zen shortcut:", self.k_zen)
         form.addRow(
@@ -254,6 +262,12 @@ class SettingsDialog(QDialog):
         self.pressure_on.setChecked(on)
         self.pressure_strength.setValue(int(cfg.get("pressure_strength", 70)))
         self.pressure_strength.setEnabled(on)
+        _select(self.touch_mode, cfg.get("touch_mode", "pan"))
+        _select(self.cursor_shape, cfg.get("cursor_shape", "cross"))
+        try:
+            self.cursor_size.setValue(int(cfg.get("cursor_size", 24)))
+        except (TypeError, ValueError):
+            self.cursor_size.setValue(24)
         _select(self.zen_mode, cfg.get("zen_style", "writing"))
         self.k_zen.setKeySequence(QKeySequence(cfg.get("zen_shortcut", "Alt+Z")))
         self.show_board.setChecked(bool(cfg.get("show_board_button", True)))
@@ -296,6 +310,9 @@ class SettingsDialog(QDialog):
             zen_style=self.zen_mode.currentData(),
             pressure_enabled=self.pressure_on.isChecked(),
             pressure_strength=self.pressure_strength.value(),
+            touch_mode=self.touch_mode.currentData(),
+            cursor_shape=self.cursor_shape.currentData(),
+            cursor_size=self.cursor_size.value(),
             placement=self.placement.currentData(),
             width=self.width_px.value(),
             board_opacity=round(self.opacity.value() / 100, 2),

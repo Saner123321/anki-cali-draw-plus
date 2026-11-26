@@ -16,7 +16,7 @@ from aqt.qt import QApplication, QTimer
 from aqt.theme import theme_manager
 from aqt.utils import tooltip
 
-from .blackboard import FAVORITE_LISTENERS, get_config, get_favorites, pressure_value, save_favorites, zen_mode
+from .blackboard import FAVORITE_LISTENERS, get_config, get_favorites, input_settings, pressure_value, save_favorites, zen_mode
 
 _WEB = os.path.join(os.path.dirname(__file__), "web")
 
@@ -53,6 +53,7 @@ class AnnotationOverlay:
         return {
             "dark": self._dark(),
             "pressure": pressure_value(),
+            **input_settings(),
             "zen": zen_mode(),
             "zenKey": get_config().get("zen_shortcut", "Alt+Z"),
             "favs": get_favorites(),

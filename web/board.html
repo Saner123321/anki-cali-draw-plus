@@ -171,6 +171,7 @@ window.ankiBridge={
   setOpacity:bgop,
   configure(o){                                         // settings changed: apply live
     const zen=S.zen;Object.assign(S,o);
+    D.configureInput();
     if("opacity" in o)bgop(S.opacity);
     if("favs" in o){renderSwatches();picker.renderFavs()}
     if("zenKey" in o)updateZenTip();

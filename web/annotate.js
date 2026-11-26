@@ -38,7 +38,7 @@ grip.addEventListener("pointermove",e=>{if(!gdrag)return;if(e.pointerType==="mou
 ["pointerup","pointercancel"].forEach(n=>grip.addEventListener(n,()=>gdrag=null));
 
 const modeBtn=btn(svg(P.pointer),"Interact with the card (click a tool to draw again)",()=>setLive(!live));
-function setLive(v){D.finish();live=v;top.classList.toggle("live",v);modeBtn.classList.toggle("on",!v);
+function setLive(v){D.endInput();live=v;top.classList.toggle("live",v);modeBtn.classList.toggle("on",!v);
   modeBtn.setAttribute("data-tip",v?"Drawing. Click to interact with the card":"Interacting. Click to draw again");
   if(!v)$("ring").style.display="none"}
 sep();
@@ -102,6 +102,7 @@ function onBusy(b){
 /* ---- API for Python ---- */
 function configure(o){
   const zen=S.zen;Object.assign(S,o);
+  D.configureInput();
   if("dark" in o){wrap.classList.toggle("dark",!!o.dark);D.redraw()}
   if("favs" in o){renderSwatches();picker.renderFavs()}
   if("zenKey" in o)updateZenTip();
@@ -110,7 +111,7 @@ function configure(o){
 const api=window.__ankidraw={
   show(o){configure(o||{});if(!shown){zenHidden=S.zen==="toggle";shown=true}applyZen();   // re-shows (new card) keep the zen state
     host.style.display="";bar.style.display="flex";setLive(true);D.resize()},
-  hide(){D.finish();picker.close();host.style.display="none"},
+  hide(){D.endInput();picker.close();host.style.display="none"},
   configure:configure,
   setTheme(d){configure({dark:!!d})},
   toggleZen(){zenHidden=!zenHidden;applyZen()},

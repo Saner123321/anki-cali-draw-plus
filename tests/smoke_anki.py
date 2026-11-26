@@ -105,18 +105,26 @@ def review_tools(mw, addon, note):
     until(lambda: js(web, "!!window.__caliplus"), "review annotation loaded")
     result = js(web, """(() => {
       const before=__caliplus.dump();
+      const root=[...document.querySelectorAll('div')].map(e=>e.shadowRoot).find(r=>r&&r.querySelector('.ad-wl'));
+      if(!root || root.querySelector('.ad-wl').textContent!=='2')return false;
+      const canvas=root.getElementById('top');
+      const pen={pointerId:101,pointerType:'pen',button:0,clientX:100,clientY:100};
+      canvas.dispatchEvent(new PointerEvent('pointerdown',pen));
+      canvas.dispatchEvent(new PointerEvent('pointerup',pen));
+      const width=JSON.parse(__caliplus.dump()).at(-1).w;
       __caliplus.setTheme(true);
       __caliplus.load('[{"t":"pen","hl":true,"c":"auto","w":15,"p":[[5,6],[9,10]]}]');
       const stroke=JSON.parse(__caliplus.dump())[0];
       __caliplus.setTheme(false);
       __caliplus.load(before);
-      return stroke.hl && stroke.w===15;
+      return width===2 && stroke.hl && stroke.w===15;
     })()""")
     assert result, "annotation highlighter or theme change failed"
     addon.toggle_annotation()
     addon.toggle_board()
     board = until(lambda: addon._board and addon._board._ready and addon._board, "review blackboard ready")
     assert js(board.web, "ankiBridge.dump()") == "", "editor ink leaked into review blackboard"
+    assert js(board.web, "document.querySelector('.ad-wl').textContent") == "2"
     js(board.web, "ankiBridge.load('[{\"t\":\"pen\",\"c\":\"auto\",\"w\":3,\"p\":[[25,30]]}]')")
     copied = []
     board._copy_png = copied.append
@@ -253,7 +261,7 @@ def github_update(mw, addon):
     manifest = target / "manifest.json"
     current = json.loads(manifest.read_bytes())
     # Exercise the menu with an artificially older version in the isolated copy.
-    manifest.write_text(json.dumps({**current, "human_version": "0.1.3"}))
+    manifest.write_text(json.dumps({**current, "human_version": "0.1.4"}))
     manager = mw.addonManager
     saved = {**manager.getConfig("anki_cali_draw_plus"), "cursor_size": 31}
     manager.writeConfig("anki_cali_draw_plus", saved)
@@ -321,6 +329,8 @@ def run():
         assert pm.addonMeta("1205964508") == original and pm.isEnabled("1205964508")
         fixture = TEST / "fixture.json"
         if STAGE == "write":
+            cfg = pm.getConfig("anki_cali_draw_plus")
+            pm.writeConfig("anki_cali_draw_plus", {k: v for k, v in cfg.items() if k != "pen_width"})
             deck = col.decks.id("Cali Plus Test")
             model = col.models.by_name("Basic")
             note = col.new_note(model)
@@ -344,6 +354,14 @@ def run():
             strokes = json.loads(read_scene(col, saved.filename))
             assert len(strokes) == 5 and abs(strokes[0]["p"][1][3] - .8) < .01, strokes
             assert col.get_note(note.id)["Back"].startswith("Preserve <b>this text</b>.")
+            assert js(board.web, "document.querySelector('.ad-wl').textContent") == "3"
+            js(board.web, """(() => {
+              const slider=document.querySelector('.ad-slider.v'), rect=slider.getBoundingClientRect();
+              const p={pointerId:111,pointerType:'pen',button:0,clientX:rect.left+2,clientY:rect.bottom-rect.height/39};
+              slider.dispatchEvent(new PointerEvent('pointerdown',p));
+              slider.dispatchEvent(new PointerEvent('pointerup',p));
+            })()""")
+            until(lambda: pm.getConfig("anki_cali_draw_plus")["pen_width"] == 2, "slider stores width 2")
             # Close the editor first so its final flush cannot overwrite fixture setup.
             browser.close()
             browser = None
@@ -367,6 +385,7 @@ def run():
                               "Plus reopen toolbar opens the board")
             finally:
                 QInputDialog.getItem = original_picker
+            assert js(board.web, "document.querySelector('.ad-wl').textContent") == "2", "pen width survived restart"
             loaded = json.loads(js(board.web, "ankiBridge.dump()"))
             assert [{k: v for k, v in s.items() if k != "id"} for s in loaded] == original["strokes"]
             # Delete the isolated first stroke, leaving the other four.

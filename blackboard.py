@@ -92,7 +92,7 @@ def _img_html(template: str, filename: str, width: Optional[int]) -> str:
 
 DEFAULT_FAVORITES = ["#e03131", "#1971c2", "#2f9e44", "#f08c00", "#9c36b5"]
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
-FAVORITE_LISTENERS: list = []  # callables run after the favourite colours change (blackboard + overlay)
+DRAWING_SETTINGS_LISTENERS: list = []  # blackboards and annotation overlay
 
 
 def get_favorites() -> list:
@@ -110,15 +110,39 @@ def save_favorites(colors) -> list:
     for i, c in enumerate(list(colors)[:5]):
         if isinstance(c, str) and _HEX.match(c):
             out[i] = c.lower()
+    _save_drawing_setting("favorite_colors", out)
+    return out
+
+
+def _save_drawing_setting(key, value) -> None:
     cfg = dict(get_config())
-    cfg["favorite_colors"] = out
+    if cfg.get(key) == value:
+        return
+    cfg[key] = value
     mw.addonManager.writeConfig(ADDON, cfg)
-    for listener in list(FAVORITE_LISTENERS):
+    for listener in list(DRAWING_SETTINGS_LISTENERS):
         try:
             listener()
         except Exception:  # a closed window must not break the others
             pass
-    return out
+
+
+def _pen_width(value) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        width = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if 1 <= width <= 40 and width == round(width * 2) / 2:
+        return width
+    return None
+
+
+def save_pen_width(value) -> None:
+    width = _pen_width(value)
+    if width is not None:
+        _save_drawing_setting("pen_width", width)
 
 
 def pressure_value() -> float:
@@ -135,6 +159,7 @@ def pressure_value() -> float:
 def input_settings() -> dict:
     cfg = get_config()
     return {
+        "penWidth": _pen_width(cfg.get("pen_width")) or 3,
         "touchMode": cfg.get("touch_mode", "pan"),
         "cursorShape": cfg.get("cursor_shape", "cross"),
         "cursorSize": cfg.get("cursor_size", 24),
@@ -277,7 +302,7 @@ class BlackboardWindow(QWidget):
         self._shortcut.activated.connect(self._on_toggle)
         self._zen_shortcut = QShortcut(QKeySequence(), self)
         self._zen_shortcut.activated.connect(self.toggle_zen)
-        FAVORITE_LISTENERS.append(self._push_settings)
+        DRAWING_SETTINGS_LISTENERS.append(self._push_settings)
 
         self.apply_config()
         self.web.setHtml(self._page_html())
@@ -434,6 +459,8 @@ class BlackboardWindow(QWidget):
                 save_favorites(json.loads(cmd[len("calidraw:favs:"):]))
             except ValueError:
                 pass
+        elif cmd.startswith("calidraw:width:"):
+            save_pen_width(cmd[len("calidraw:width:"):])
         elif cmd.startswith("calidraw:copy:"):
             self._copy_png(cmd[len("calidraw:copy:"):].partition(":")[2])
         elif cmd.startswith("calidraw:save:"):
@@ -649,8 +676,8 @@ class BlackboardWindow(QWidget):
         self._run(f"ankiBridge.nudge({height if hidden else -height})")
 
     def destroy_for_good(self) -> None:
-        if self._push_settings in FAVORITE_LISTENERS:
-            FAVORITE_LISTENERS.remove(self._push_settings)
+        if self._push_settings in DRAWING_SETTINGS_LISTENERS:
+            DRAWING_SETTINGS_LISTENERS.remove(self._push_settings)
         self._destroying = True
         self.web.cleanup()
         self.close()

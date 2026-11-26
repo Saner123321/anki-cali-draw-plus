@@ -74,12 +74,8 @@ renderSwatches();
 sep();
 
 /* thickness slider */
-const wbox=C.el("div","ad-wrap"),wdot=C.el("div","ad-wdot","<i></i>"),wl=C.el("div","ad-wl","3");
-function showWidth(w){wl.textContent=w;wdot.firstChild.style.width=wdot.firstChild.style.height=Math.min(20,Math.max(2,w))+"px"}
-const ws=C.makeSlider({min:1,max:40,step:.5,value:3,vertical:false,
-  onInput:v=>{D.setWidth(v);showWidth(v)},onChange:()=>D.applyWidthToSelection()});
-L.tip(ws.el,"Pen thickness (slide right = thicker)");
-wbox.appendChild(wdot);wbox.appendChild(ws.el);wbox.appendChild(wl);bar.appendChild(wbox);showWidth(3);
+const widthControl=C.makeWidthControl(D,L,false,w=>pycmd("caliplus:width:"+w));
+bar.appendChild(widthControl.el);
 sep();
 
 btn(svg(P.undo),"Undo",D.undo);btn(svg(P.redo),"Redo",D.redo);
@@ -106,6 +102,7 @@ function configure(o){
   const zen=S.zen;Object.assign(S,o);
   D.configureInput();
   if("dark" in o){wrap.classList.toggle("dark",!!o.dark);D.redraw()}
+  if("penWidth" in o)widthControl.restore(S.penWidth);
   if("strings" in o){L.refresh(wrap);copyBtn.lastChild.nodeValue=tr("Copy")}
   if("favs" in o||"strings" in o){renderSwatches();picker.renderFavs()}
   if("zenKey" in o)updateZenTip();

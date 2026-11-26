@@ -90,12 +90,8 @@ renderSwatches();
 sep($("props"));
 
 /* ---------- thickness slider ---------- */
-const wbox=C.el("div","ad-wrap"),wdot=C.el("div","ad-wdot","<i></i>"),wl=C.el("div","ad-wl","3");
-function showWidth(w){wl.textContent=w;wdot.firstChild.style.width=wdot.firstChild.style.height=Math.min(20,Math.max(2,w))+"px"}
-const ws=C.makeSlider({min:1,max:40,step:.5,value:3,vertical:true,
-  onInput:v=>{D.setWidth(v);showWidth(v)},onChange:()=>D.applyWidthToSelection()});
-L.tip(ws.el,"Pen thickness (slide up = thicker)");
-wbox.appendChild(wdot);wbox.appendChild(ws.el);wbox.appendChild(wl);$("props").appendChild(wbox);showWidth(3);
+const widthControl=C.makeWidthControl(D,L,true,w=>send("calidraw:width:"+w));
+$("props").appendChild(widthControl.el);
 
 /* ---------- actions ---------- */
 const copyBtn=btn($("acts"),svg(P.copy)+"Copy PNG","Copy to clipboard as PNG",()=>exportPng("copy"),"txt");
@@ -184,6 +180,7 @@ window.ankiBridge={
     const zen=S.zen;Object.assign(S,o);
     D.configureInput();
     if("opacity" in o)bgop(S.opacity);
+    if("penWidth" in o)widthControl.restore(S.penWidth);
     if("strings" in o){L.refresh(document);onSel(D.hasSel?1:0)}
     if("favs" in o||"strings" in o){renderSwatches();picker.renderFavs()}
     if("zenKey" in o)updateZenTip();

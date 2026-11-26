@@ -126,7 +126,7 @@ function installTips(root){
 function makeSlider(o){
   const box=el("div","ad-slider "+(o.vertical?"v":"h")),fill=el("i","ad-sfill"),thumb=el("b","ad-sthumb");
   box.appendChild(fill);box.appendChild(thumb);if(o.tip)box.setAttribute("data-tip",o.tip);
-  let v=o.value,dragging=false;
+  let v=o.value,activePointer=null;
   function paint(){const f=clamp((v-o.min)/(o.max-o.min),0,1)*100;
     if(o.vertical){fill.style.height=f+"%";thumb.style.bottom="calc("+f+"% - 7px)"}
     else{fill.style.width=f+"%";thumb.style.left="calc("+f+"% - 7px)"}}
@@ -134,11 +134,31 @@ function makeSlider(o){
     const r=box.getBoundingClientRect(),f=clamp(o.vertical?1-(e.clientY-r.top)/r.height:(e.clientX-r.left)/r.width,0,1);
     const nv=clamp(Math.round((o.min+f*(o.max-o.min))/o.step)*o.step,o.min,o.max);
     if(nv!==v){v=nv;paint();o.onInput(v)}}
-  box.addEventListener("pointerdown",e=>{dragging=true;try{box.setPointerCapture(e.pointerId)}catch(_){}fromEvent(e)});
-  box.addEventListener("pointermove",e=>{if(dragging)fromEvent(e)});
-  ["pointerup","pointercancel"].forEach(n=>box.addEventListener(n,()=>{if(dragging){dragging=false;if(o.onChange)o.onChange(v)}}));
+  box.addEventListener("pointerdown",e=>{
+    if(activePointer!==null||e.button!==0)return;
+    activePointer=e.pointerId;try{box.setPointerCapture(e.pointerId)}catch(_){}fromEvent(e);
+  });
+  box.addEventListener("pointermove",e=>{if(e.pointerId===activePointer)fromEvent(e)});
+  ["pointerup","pointercancel","lostpointercapture"].forEach(n=>box.addEventListener(n,e=>{
+    if(e.pointerId===activePointer){activePointer=null;if(o.onChange)o.onChange(v)}
+  }));
   paint();
-  return{el:box,get value(){return v},set(nv){v=nv;paint()}};
+  return{el:box,set(nv){if(activePointer===null&&v!==nv){v=nv;paint();o.onInput(v)}}};
+}
+
+function makeWidthControl(D,L,vertical,persist){
+  const wrap=el("div","ad-wrap"),dot=el("div","ad-wdot","<i></i>"),label=el("div","ad-wl");
+  function setWidth(width){
+    D.setWidth(width);
+    label.textContent=width;
+    dot.firstChild.style.width=dot.firstChild.style.height=Math.min(20,Math.max(2,width))+"px";
+  }
+  const slider=makeSlider({min:1,max:40,step:.5,value:D.width,vertical,onInput:setWidth,
+    onChange:width=>{D.applyWidthToSelection();persist(width)}});
+  L.tip(slider.el,vertical?"Pen thickness (slide up = thicker)":"Pen thickness (slide right = thicker)");
+  wrap.appendChild(dot);wrap.appendChild(slider.el);wrap.appendChild(label);
+  setWidth(D.width);
+  return {el:wrap,restore:slider.set};
 }
 
 /* ------------------------------------------------------------------ colour picker + 5 favourites */
@@ -207,7 +227,7 @@ function engine(o){
   const bctx=base.getContext("2d"),tctx=top.getContext("2d");
   const ZMIN=.25,ZMAX=100,ER=10;
   let els=[],undo=[],redo=[],drag=null,sel=new Set(),selBox=null,nextId=1;
-  let tool="pen",color="auto",width=3,dpr=1,space=false,showSel=true;
+  let tool="pen",color="auto",width=S.penWidth||3,dpr=1,space=false,showSel=true;
   let owner=null, lastPen=-Infinity, touchFrame=0, touchStarted=false;
   let cursor=penCursor(S.cursorShape,S.cursorSize);
   const touches=new Map();
@@ -545,5 +565,5 @@ function engine(o){
   };
 }
 
-return{P:P,svg:svg,el:el,clamp:clamp,CSS:CSS,localizer:localizer,installTips:installTips,makePicker:makePicker,makeSlider:makeSlider,engine:engine,hsv2hex:hsv2hex,hex2hsv:hex2hsv};
+return{P:P,svg:svg,el:el,clamp:clamp,CSS:CSS,localizer:localizer,installTips:installTips,makePicker:makePicker,makeWidthControl:makeWidthControl,engine:engine,hsv2hex:hsv2hex,hex2hsv:hex2hsv};
 })();

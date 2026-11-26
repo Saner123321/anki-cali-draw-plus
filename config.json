@@ -8,6 +8,7 @@
   "solid_background": false,
   "pressure_enabled": true,
   "pressure_strength": 70,
+  "pen_width": 3,
   "touch_mode": "pan",
   "cursor_shape": "cross",
   "cursor_size": 24,

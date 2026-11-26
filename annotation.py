@@ -16,7 +16,8 @@ from aqt.qt import QApplication, QTimer
 from aqt.theme import theme_manager
 from aqt.utils import tooltip
 
-from .blackboard import FAVORITE_LISTENERS, get_config, get_favorites, input_settings, pressure_value, save_favorites, zen_mode
+from .blackboard import (DRAWING_SETTINGS_LISTENERS, get_config, get_favorites, input_settings,
+                         pressure_value, save_favorites, save_pen_width, zen_mode)
 from .i18n import tr, web_strings
 
 _WEB = os.path.join(os.path.dirname(__file__), "web")
@@ -29,7 +30,7 @@ class AnnotationOverlay:
         self._cid: Optional[int] = None
         self._js_source: Optional[str] = None
         self.open_settings: Optional[Callable[[], None]] = None
-        FAVORITE_LISTENERS.append(self.apply_settings)
+        DRAWING_SETTINGS_LISTENERS.append(self.apply_settings)
 
     # -- helpers ----------------------------------------------------------
     @property
@@ -138,6 +139,8 @@ class AnnotationOverlay:
                 save_favorites(json.loads(message[len("caliplus:favs:"):]))
             except ValueError:
                 pass
+        elif message.startswith("caliplus:width:"):
+            save_pen_width(message[len("caliplus:width:"):])
         elif message == "caliplus:copy":
             self._copy_screenshot()
         return (True, None)

@@ -16,6 +16,7 @@ Advanced keys (for hand-editing `config.json`):
 - `touch_mode` – `pan` enables finger pan and pinch on the blackboard. `ink` allows drawing with a finger. In annotation mode, `pan` scrolls the current card.
 - `cursor_shape` – `cross`, `dot`, `ring`, or `hidden` for the drawing tools. The eraser and selection tools keep their own cursors.
 - `cursor_size` – drawing cursor size in CSS pixels, from 6 to 48.
+- `pen_width` – the last chosen pen thickness, saved locally when you release the slider. The review blackboard, editor blackboard and annotation overlay share this setting.
 - `interface_language` – `auto` follows the Anki interface, `en` selects English, and `zh_CN` selects Simplified Chinese.
 - `zen_style` – `writing` (default: tools hide while you draw), `toggle` (tools stay hidden until `zen_shortcut` is pressed) or `off`. The eye button in the toolbar hides/shows the tools manually in any style.
 - `favorite_colors` – the five favourite colours (edited from the colour picker in the toolbar).

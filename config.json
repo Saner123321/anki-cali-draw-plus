@@ -13,6 +13,7 @@
   "cursor_size": 24,
   "zen_style": "writing",
   "theme": "auto",
+  "interface_language": "auto",
   "persistence": "clear_on_next",
   "auto_open_on_review": false,
   "auto_hide_outside_review": true,

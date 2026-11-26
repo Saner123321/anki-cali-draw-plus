@@ -12,12 +12,13 @@ import json
 from typing import Optional
 
 from aqt import gui_hooks, mw
-from aqt.qt import QAction, QInputDialog, QKeySequence, QShortcut
-from aqt.utils import showInfo, tooltip
+from aqt.qt import QAction, QInputDialog, QKeySequence, QShortcut, Qt, QWidget
+from aqt.utils import tooltip
 
 from .annotation import AnnotationOverlay
 from .blackboard import BlackboardWindow, get_config
 from .drawing_media import drawing_refs, read_scene
+from .i18n import tr
 from .settings import SettingsDialog
 from .updater import check_for_updates
 
@@ -25,9 +26,7 @@ NAME = "Anki-Cali Draw Plus"
 
 _board: Optional[BlackboardWindow] = None
 _editor_board: Optional[BlackboardWindow] = None
-_board_action: Optional[QAction] = None
-_annot_action: Optional[QAction] = None
-_zen_action: Optional[QAction] = None
+_menu_actions: dict[str, QAction] = {}
 _shortcuts: dict = {}  # config key -> (QShortcut, default); kept apart from the menu items so no key text shows in names
 _overlay = AnnotationOverlay()
 
@@ -55,18 +54,23 @@ def _key(name: str, default: str) -> str:
 # --------------------------------------------------------------------------
 # Actions
 # --------------------------------------------------------------------------
-def open_settings() -> None:
-    SettingsDialog(mw, on_saved=_on_settings_saved).exec()
+def open_settings(parent: QWidget | None = None) -> None:
+    owner = parent or mw
+    dialog = SettingsDialog(owner, on_saved=lambda old, new: _on_settings_saved(old, new, owner))
+    dialog.setWindowModality(Qt.WindowModality.WindowModal)
+    if owner.windowFlags() & Qt.WindowType.WindowStaysOnTopHint:
+        dialog.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, True)
+    dialog.exec()
 
 
 def toggle_board() -> None:
     """Show/hide the blackboard window."""
     global _board
-    if _board is not None and _board.isVisible():
+    if _board is not None and _board.isVisible() and not _board.isMinimized():
         _board.hide_panel()
         return
     if mw.state != "review":
-        tooltip(f"{NAME}: the blackboard is available while reviewing.")
+        tooltip(tr("The blackboard is available while reviewing."))
         return
     if _board is None:
         _board = BlackboardWindow(on_toggle=toggle_board, on_settings=open_settings)
@@ -76,7 +80,9 @@ def toggle_board() -> None:
 def open_from_editor(editor) -> None:
     note = getattr(editor, "note", None)
     if note is None:
-        tooltip(f"{NAME}: select or open a note first.")
+        tooltip(tr("Select or open a note first."))
+        return
+    if _editor_board is not None and _editor_board.restore_minimized_editor(editor, note):
         return
     idx = editor.currentField
     if idx is None:
@@ -90,7 +96,7 @@ def edit_from_editor(editor) -> None:
     note = getattr(editor, "note", None)
     col = mw.col
     if note is None or col is None:
-        tooltip(f"{NAME}: select or open a note first.")
+        tooltip(tr("Select or open a note first."))
         return
 
     def open_drawing() -> None:
@@ -98,19 +104,19 @@ def edit_from_editor(editor) -> None:
             return
         refs = [ref for field in note.keys() for ref in drawing_refs(field, note[field])]
         if not refs:
-            tooltip("This note has no editable Cali Draw Plus drawings.", parent=editor.widget)
+            tooltip(tr("This note has no editable Cali Draw Plus drawings."), parent=editor.widget)
             return
         ref = refs[0]
         if len(refs) > 1:
             labels = [f"{i+1}. {ref.field} ({ref.filename[10:18]})" for i, ref in enumerate(refs)]
-            chosen, ok = QInputDialog.getItem(editor.widget, NAME, "Open which drawing?", labels, 0, False)
+            chosen, ok = QInputDialog.getItem(editor.widget, NAME, tr("Open which drawing?"), labels, 0, False)
             if not ok:
                 return
             ref = refs[labels.index(chosen)]
         try:
             scene = read_scene(col, ref.filename)
         except ValueError as exc:
-            tooltip(str(exc), parent=editor.widget)
+            tooltip(tr(str(exc)), parent=editor.widget)
             return
         if mw.col is col and editor.note is note:
             _show_editor_board(editor, note, ref.field, ref, scene)
@@ -138,7 +144,7 @@ def toggle_zen() -> None:
         _editor_board.toggle_zen()
         done = True
     if not done:
-        tooltip(f"{NAME}: open the blackboard or annotation mode first.")
+        tooltip(tr("Open the blackboard or annotation mode first."))
 
 
 def toggle_annotation() -> None:
@@ -196,7 +202,7 @@ def _add_editor_button(buttons: list, editor) -> None:
             None,
             "caliplus_editor",
             open_from_editor,
-            tip=f"{NAME}: draw and insert into this note",
+            tip=f"{NAME}: {tr('Draw and insert into this note')}",
             label=TOOLBAR_ICONS["caliplus_board"],
             id="caliplus_editor",
             rightside=False,
@@ -207,7 +213,7 @@ def _add_editor_button(buttons: list, editor) -> None:
             None,
             "caliplus_edit",
             edit_from_editor,
-            tip=f"{NAME}: reopen a saved drawing in this note",
+            tip=f"{NAME}: {tr('Reopen a saved drawing in this note')}",
             label=TOOLBAR_ICONS["caliplus_annotate"],
             id="caliplus_edit",
             rightside=False,
@@ -216,8 +222,8 @@ def _add_editor_button(buttons: list, editor) -> None:
 
 
 def _add_context_menu(reviewer, menu) -> None:
-    menu.addAction(f"{NAME}: Blackboard").triggered.connect(toggle_board)
-    menu.addAction(f"{NAME}: Annotate on card").triggered.connect(toggle_annotation)
+    menu.addAction(f"{NAME}: {tr('Blackboard')}").triggered.connect(toggle_board)
+    menu.addAction(f"{NAME}: {tr('Annotate on card')}").triggered.connect(toggle_annotation)
 
 
 def _add_toolbar_links(links: list, toolbar) -> None:
@@ -227,9 +233,9 @@ def _add_toolbar_links(links: list, toolbar) -> None:
         links.append(
             toolbar.create_link(
                 "caliplus_board",
-                "Blackboard",
+                tr("Blackboard"),
                 toggle_board,
-                tip=f"{NAME}: blackboard",
+                tip=f"{NAME}: {tr('Blackboard')}",
                 id="caliplus_board",
             )
         )
@@ -237,9 +243,9 @@ def _add_toolbar_links(links: list, toolbar) -> None:
         links.append(
             toolbar.create_link(
                 "caliplus_annotate",
-                "Annotate",
+                tr("Annotate"),
                 toggle_annotation,
-                tip=f"{NAME}: draw on the card",
+                tip=f"{NAME}: {tr('Annotate on card')}",
                 id="caliplus_annotate",
             )
         )
@@ -274,6 +280,8 @@ def _style_toolbar(web_content, context) -> None:
 
 
 def _on_config_updated(_cfg: dict) -> None:
+    for label, action in _menu_actions.items():
+        action.setText(tr(label))
     for name, (shortcut, default) in _shortcuts.items():
         shortcut.setKey(QKeySequence(_key(name, default)))
     _overlay.apply_settings()  # theme, pressure, zen mode, favourite colours
@@ -295,72 +303,30 @@ def _refresh_toolbar() -> bool:
     return False
 
 
-_SETTING_LABELS = {
-    "theme": "Theme",
-    "persistence": "When the card changes",
-    "shortcut": "Blackboard shortcut",
-    "annotate_shortcut": "Annotate shortcut",
-    "zen_shortcut": "Zen shortcut",
-    "zen_style": "Zen mode",
-    "pressure_enabled": "Pressure sensitivity",
-    "pressure_strength": "Pressure strength",
-    "touch_mode": "Finger input",
-    "cursor_shape": "Pen cursor",
-    "cursor_size": "Cursor size",
-    "placement": "Blackboard position",
-    "width": "Blackboard width",
-    "board_opacity": "Blackboard opacity",
-    "solid_background": "Solid blackboard",
-    "auto_open_on_review": "Open blackboard on review",
-    "auto_hide_outside_review": "Hide blackboard outside review",
-    "show_board_button": "Blackboard toolbar button",
-    "show_annotate_button": "Annotate toolbar button",
-    "show_editor_button": "Editor draw button",
-    "hide_upstream_buttons": "Hide duplicate original buttons",
-    "save_to_card": "Save to card",
-}
-
-
-def _on_settings_saved(old: dict, new: dict) -> None:
-    """Apply everything from the settings window right away, and always tell the user to
-    restart Anki when something changed (a few settings only take effect after a restart)."""
+def _on_settings_saved(old: dict, new: dict, owner: QWidget) -> None:
     _on_config_updated({})
     _refresh_toolbar()
-    changed = [
-        _SETTING_LABELS.get(k, k)
-        for k in sorted(set(old) | set(new))
-        if k != "favorite_colors" and old.get(k) != new.get(k)
-    ]
-    if changed:
-        showInfo(
-            "Settings saved.\n\n"
-            "Please restart Anki so that every change takes effect - some settings only apply "
-            "after a restart.\n\nChanged: " + ", ".join(changed),
-            parent=mw,
-        )
+    if old != new:
+        tooltip(tr("Settings saved."), parent=owner)
 
 
 # --------------------------------------------------------------------------
 # Setup
 # --------------------------------------------------------------------------
 def _setup() -> None:
-    global _board_action, _annot_action, _zen_action
-
     menu = mw.form.menuTools.addMenu(NAME)
-    _board_action = QAction("Blackboard", mw)
-    _board_action.triggered.connect(toggle_board)
-    menu.addAction(_board_action)
-    _annot_action = QAction("Annotate on card", mw)
-    _annot_action.triggered.connect(toggle_annotation)
-    menu.addAction(_annot_action)
-    _zen_action = QAction("Toggle zen mode (hide all tools)", mw)
-    _zen_action.triggered.connect(toggle_zen)
-    menu.addAction(_zen_action)
+    for label, callback in (
+        ("Blackboard", toggle_board),
+        ("Annotate on card", toggle_annotation),
+        ("Toggle zen mode (hide all tools)", toggle_zen),
+    ):
+        _menu_actions[label] = action = menu.addAction(tr(label))
+        action.triggered.connect(callback)
     menu.addSeparator()
-    settings_action = QAction("Settings…", mw)
-    settings_action.triggered.connect(open_settings)
-    menu.addAction(settings_action)
-    update_action = menu.addAction("Check for updates (GitHub)…")
+    _menu_actions["Settings…"] = settings_action = menu.addAction(tr("Settings…"))
+    settings_action.triggered.connect(lambda: open_settings())
+    update_label = "Check for updates (GitHub)…"
+    _menu_actions[update_label] = update_action = menu.addAction(tr(update_label))
     update_action.triggered.connect(lambda: check_for_updates(mw, update_action))
 
     # Keyboard shortcuts are plain QShortcuts, not menu-item shortcuts: they work the same

@@ -27,6 +27,7 @@ from aqt.qt import (
     QApplication,
     QHBoxLayout,
     QColor,
+    QEvent,
     QImage,
     QInputDialog,
     QLabel,
@@ -46,6 +47,7 @@ from aqt.utils import askUser, restoreGeom, saveGeom, tooltip
 from aqt.webview import AnkiWebView
 
 from .drawing_media import MAX_SVG_BYTES, DrawingRef, drawing_refs, load_scene, media_name
+from .i18n import tr, web_strings
 
 ADDON = mw.addonManager.addonFromModule(__name__)
 GEOM_KEY = "caliDrawPlusBoard"
@@ -166,61 +168,82 @@ class EditorTarget:
 
 
 class DragBar(QWidget):
-    """Slim custom title bar for the frameless window: drag to move, X to hide."""
+    """Native window actions for the frameless blackboard."""
 
-    def __init__(
-        self, on_close: Callable[[], None], on_settings: Optional[Callable[[], None]] = None
-    ) -> None:
+    def __init__(self, board, on_settings) -> None:
         super().__init__()
+        self.board = board
         self.setObjectName("ankidrawBar")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setFixedHeight(28)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 0, 4, 0)
-        lay.addWidget(QLabel("Anki-Cali Draw Plus"))  # QLabel ignores clicks -> they reach the bar
-        lay.addStretch(1)
-        if on_settings:
-            gear = QToolButton()
-            gear.setText("\u2699")
-            gear.setAccessibleName("Anki-Cali Draw Plus settings")
-            gear.setCursor(Qt.CursorShape.PointingHandCursor)
-            gear.clicked.connect(on_settings)
-            lay.addWidget(gear)
-        btn = QToolButton()
-        btn.setText("\u2715")
-        btn.setAccessibleName("Hide (your drawing is kept)")
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn.clicked.connect(on_close)
-        lay.addWidget(btn)
+        self.setFixedHeight(34)
+        self.layout_row = QHBoxLayout(self)
+        self.layout_row.setContentsMargins(10, 0, 4, 0)
+        self.layout_row.setSpacing(2)
+        self.layout_row.addWidget(QLabel("Anki-Cali Draw Plus"))
+        self.layout_row.addStretch(1)
+        self.settings_button = self._button("\u2699", lambda: on_settings(board)) if on_settings else None
+        self.minimize_button = self._button("\u2212", board.minimize_panel)
+        self.maximize_button = self._button("\u25a1", board.toggle_maximized)
+        self.close_button = self._button("\u2715", board.hide_panel)
+        self.refresh_labels()
+
+    def _button(self, glyph, clicked) -> QToolButton:
+        button = QToolButton()
+        button.setText(glyph)
+        button.setFixedSize(34, self.height())
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        button.clicked.connect(clicked)
+        self.layout_row.addWidget(button)
+        return button
+
+    def refresh_labels(self) -> None:
+        maximized = self.board.isMaximized()
+        self.maximize_button.setText("\u2750" if maximized else "\u25a1")
+        for button, label in (
+            (self.settings_button, "Settings"),
+            (self.minimize_button, "Minimize"),
+            (self.maximize_button, "Restore" if maximized else "Maximize"),
+            (self.close_button, "Hide (your drawing is kept)"),
+        ):
+            if button is not None:
+                button.setToolTip(tr(label))
+                button.setAccessibleName(tr(label))
 
     def restyle(self, c: dict) -> None:
         self.setStyleSheet(
             f"#ankidrawBar{{background:{c['bar']};}}"
             f"QLabel{{color:{c['fg']};font-weight:600;font-size:12px;}}"
-            f"QToolButton{{color:{c['fg']};border:none;padding:3px 9px;border-radius:6px;}}"
+            f"QToolButton{{color:{c['fg']};border:none;font-size:16px;border-radius:6px;}}"
             "QToolButton:hover{background:rgba(127,127,127,.25);}"
         )
 
     def mousePressEvent(self, ev) -> None:  # noqa: N802
-        if ev.button() == Qt.MouseButton.LeftButton:
+        if ev.button() == Qt.MouseButton.LeftButton and not self.board.isMaximized():
             handle = self.window().windowHandle()
             if handle:
                 handle.startSystemMove()  # native drag, works on Win/macOS/Linux
+
+    def mouseDoubleClickEvent(self, ev) -> None:  # noqa: N802
+        if ev.button() == Qt.MouseButton.LeftButton:
+            self.board.toggle_maximized()
 
 
 class BlackboardWindow(QWidget):
     def __init__(
         self,
         on_toggle: Callable[[], None],
-        on_settings: Optional[Callable[[], None]] = None,
+        on_settings: Optional[Callable[[QWidget], None]] = None,
     ) -> None:
-        super().__init__(mw, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint)
+        flags = (Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
+                 | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowMaximizeButtonHint)
+        super().__init__(mw, flags)
         self._on_toggle = on_toggle
         self._ready = False  # becomes True when the JS side says "calidraw:ready"
         self._queue: list[tuple[str, Optional[Callable]]] = []
         self._scenes: dict[int, str] = {}  # card id -> serialized elements (per_card mode)
         self._current_cid: Optional[int] = None
         self._placed = False
+        self._placement_settings = None
         self._destroying = False
         self._target: EditorTarget | None = None
         self._session = 0
@@ -241,7 +264,7 @@ class BlackboardWindow(QWidget):
 
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMouseTracking(True)  # for resize cursors on the frame
-        self.bar = DragBar(self.hide_panel, on_settings)
+        self.bar = DragBar(self, on_settings)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(EDGE, EDGE, EDGE, EDGE)
         layout.setSpacing(0)
@@ -277,6 +300,7 @@ class BlackboardWindow(QWidget):
         return {
             "opacity": self._opacity(),
             "pressure": pressure_value(),
+            "strings": web_strings(),
             **input_settings(),
             "zen": zen_mode(),
             "zenKey": get_config().get("zen_shortcut", "Alt+Shift+Z"),
@@ -310,13 +334,19 @@ class BlackboardWindow(QWidget):
         self._zen_shortcut.setKey(QKeySequence(cfg.get("zen_shortcut", "Alt+Shift+Z")))
         self.setWindowOpacity(1.0)  # QtWebEngine ignores window opacity; fade the page instead
         was_visible = self.isVisible()
+        state = self.windowState()
         if self._sync_translucency() and was_visible:
+            self.setWindowState(state)
             self.show()  # the native window was recreated
         self._push_settings()
-        self._placed = False  # placement/width may have changed: re-place on next show
-        if self.isVisible() and cfg.get("placement") != "remember":
-            self._place()  # ...and apply it right now if the window is open
-            self._placed = True
+        self.bar.refresh_labels()
+        settings = (cfg.get("placement", "beside"), cfg.get("width", 620))
+        if settings != self._placement_settings:
+            self._placement_settings = settings
+            self._placed = False
+            if self.isVisible() and not (self.isMinimized() or self.isMaximized()) and settings[0] != "remember":
+                self._place()
+                self._placed = True
         self.apply_theme()
 
     def _opacity(self) -> float:
@@ -413,6 +443,8 @@ class BlackboardWindow(QWidget):
     # Frameless-window resizing (the EDGE-px frame around the web view)
     # ------------------------------------------------------------------
     def _edges_at(self, pos) -> list:
+        if self.isMaximized():
+            return []
         edges = []
         if pos.x() < EDGE:
             edges.append(Qt.Edge.LeftEdge)
@@ -451,7 +483,9 @@ class BlackboardWindow(QWidget):
     # Show / hide / placement
     # ------------------------------------------------------------------
     def show_panel(self) -> None:
-        if not self._placed:
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized)
+        if not self._placed and not self.isMaximized():
             self._place()
             self._placed = True
         if self._target is None and self._current_cid is None and mw.reviewer.card:
@@ -461,6 +495,21 @@ class BlackboardWindow(QWidget):
         self.raise_()
         self.activateWindow()
         self.web.setFocus()
+
+    def minimize_panel(self) -> None:
+        self.showMinimized()
+        self._return_focus()
+
+    def toggle_maximized(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "bar"):
+            self.bar.refresh_labels()
 
     def hide_panel(self) -> None:
         if self.isVisible() and get_config().get("placement") == "remember":
@@ -477,7 +526,7 @@ class BlackboardWindow(QWidget):
 
     def show_for_editor(self, editor, note, field, drawing=None, scene="") -> None:
         if self._saving or self._switching:
-            tooltip("Wait for the current drawing operation to finish.", parent=self)
+            tooltip(tr("Wait for the current drawing operation to finish."), parent=self)
             return
         target = EditorTarget(editor, note, field, drawing)
         old = self._target
@@ -489,7 +538,7 @@ class BlackboardWindow(QWidget):
             self._switching = False
             if self._destroying or target.current_note() is None:
                 return
-            if dirty and not askUser("Discard the unsaved changes to the drawing on the blackboard?", parent=self, defaultno=True):
+            if dirty and not askUser(tr("Discard the unsaved changes to the drawing on the blackboard?"), parent=self, defaultno=True):
                 self.show_panel()
                 return
             if target.current_note() is None:
@@ -505,6 +554,13 @@ class BlackboardWindow(QWidget):
             self._run("ankiBridge.isDirty()", open_session)
         else:
             open_session()
+
+    def restore_minimized_editor(self, editor, note) -> bool:
+        target = self._target
+        if not self.isMinimized() or target is None or target.editor is not editor or target.current_note() is not note:
+            return False
+        self.show_panel()
+        return True
 
     def is_reviewer_target(self) -> bool:
         return self._target is None
@@ -638,7 +694,7 @@ class BlackboardWindow(QWidget):
                 target.field, target.drawing = drawing.field, drawing
             self._run(f"ankiBridge.saved({session},{json.dumps(drawing is not None)})")
             if message:
-                tooltip(message, parent=self)
+                tooltip(tr(message), parent=self)
 
         try:
             if len(payload) > MAX_SVG_BYTES + MAX_SVG_BYTES // 2:
@@ -678,18 +734,18 @@ class BlackboardWindow(QWidget):
                         visible_note[field] = result[0]
                         target.editor.loadNote()
                 finally:
-                    done(f'Drawing saved to "{field}".', result[1] if target and (whole or ref) else None)
+                    done(tr('Drawing saved to "{field}".', field=field), result[1] if target and (whole or ref) else None)
 
             if nid:
                 CollectionOp(parent=mw, op=write).success(saved).failure(
-                    lambda exc: done(f"Could not save the drawing: {exc}")
+                    lambda exc: done(tr("Could not save the drawing: {error}", error=tr(str(exc))))
                 ).run_in_background(initiator=target.editor if target else None)
             else:
                 result = write_drawing(col, note, field, data, width, cfg, ref)
                 # Add mode owns the unsaved note and persists it when Add is pressed.
                 if target:
                     target.editor.loadNote()
-                done(f'Drawing inserted into "{field}".', result[1] if whole or ref else None)
+                done(tr('Drawing inserted into "{field}".', field=field), result[1] if whole or ref else None)
 
         if target is None:
             card = mw.reviewer.card if mw.state == "review" else None
@@ -721,7 +777,7 @@ class BlackboardWindow(QWidget):
                 else:
                     persist(note, field, note[field])
             except Exception as exc:
-                done(f"Could not save the drawing: {exc}")
+                done(tr("Could not save the drawing: {error}", error=tr(str(exc))))
 
         if target.current_note() is None:
             done("The editor was closed or changed notes. Reopen the original note to save.")
@@ -736,7 +792,7 @@ class BlackboardWindow(QWidget):
             try:
                 target.editor.call_after_note_saved(on_flushed)
             except RuntimeError as exc:
-                done(f"Could not reach the editor: {exc}")
+                done(tr("Could not reach the editor: {error}", error=str(exc)))
             QTimer.singleShot(10000, lambda: None if flushed_flag else done("The editor did not respond. Try saving again."))
 
 
@@ -744,10 +800,10 @@ def copy_png(b64: str, parent: Optional[QWidget] = None) -> None:
     """Put a base64 PNG on the system clipboard as an image."""
     image = QImage()
     if not image.loadFromData(base64.b64decode(b64), "PNG"):
-        tooltip("Could not copy the drawing.", parent=parent or mw)
+        tooltip(tr("Could not copy the drawing."), parent=parent or mw)
         return
     QApplication.clipboard().setImage(image)
-    tooltip("Drawing copied to clipboard.", parent=parent or mw)
+    tooltip(tr("Drawing copied to clipboard."), parent=parent or mw)
 
 
 def choose_field(note, parent: Optional[QWidget] = None) -> Optional[str]:
@@ -760,10 +816,10 @@ def choose_field(note, parent: Optional[QWidget] = None) -> Optional[str]:
             return names[-1]
         if wanted in names:
             return wanted
-        tooltip(f'This note has no "{wanted}" field - please choose one.', parent=parent or mw)
+        tooltip(tr('This note has no "{wanted}" field - please choose one.', wanted=wanted), parent=parent or mw)
     default = names.index(wanted) if wanted in names else len(names) - 1
     field, ok = QInputDialog.getItem(
-        parent or mw, "Anki-Cali Draw Plus", "Add the drawing to which field?", names, default, False
+        parent or mw, "Anki-Cali Draw Plus", tr("Add the drawing to which field?"), names, default, False
     )
     return field if ok else None
 

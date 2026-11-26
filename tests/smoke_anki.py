@@ -126,6 +126,78 @@ def review_tools(mw, addon, note):
     addon.toggle_board()
 
 
+def editor_window_controls(board, editor):
+    from anki import lang
+    from aqt.qt import QApplication, QDialogButtonBox, QTabWidget, Qt
+    from anki_cali_draw_plus.i18n import interface_language
+    from anki_cali_draw_plus.settings import SettingsDialog
+
+    board.resize(850, 710)
+    normal_size = board.size()
+    board.bar.maximize_button.click()
+    until(board.isMaximized, "canvas maximized from its title bar")
+    assert board.bar.maximize_button.accessibleName() == "Restore"
+    assert board.size().width() >= normal_size.width()
+    original = js(board.web, "ankiBridge.dump()")
+
+    def change_language(value, tab):
+        result = []
+
+        def inspect_and_save():
+            dialog = QApplication.activeModalWidget()
+            try:
+                assert isinstance(dialog, SettingsDialog), "settings did not become the active modal window"
+                assert dialog.parentWidget() is board
+                assert dialog.windowHandle().transientParent() is board.windowHandle()
+                assert dialog.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+                if sys.platform == "win32":
+                    import win32gui
+                    hwnd = int(dialog.winId())
+                    canvas_hwnd = int(board.winId())
+                    while hwnd and hwnd != canvas_hwnd:
+                        hwnd = win32gui.GetWindow(hwnd, 2)  # GW_HWNDNEXT, next lower in the native Z order
+                    assert hwnd == canvas_hwnd, "native settings window is behind the canvas"
+                assert dialog.findChild(QTabWidget).tabText(0) == tab
+                dialog.language.setCurrentIndex(dialog.language.findData(value))
+                dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Save).click()
+                result.append(True)
+            except Exception:
+                result.append(traceback.format_exc())
+                if isinstance(dialog, SettingsDialog):
+                    dialog.reject()
+
+        QTimer.singleShot(120, inspect_and_save)
+        board.bar.settings_button.click()
+        assert result == [True], result
+        assert board.isMaximized(), "settings save should leave the canvas maximized"
+
+    change_language("zh_CN", "General")
+    assert board.bar.maximize_button.toolTip() == "还原"
+    assert js(board.web, "document.querySelector('[data-cali-tip=Pen]').getAttribute('data-tip')") == "画笔"
+    change_language("en", "常规")
+    assert board.bar.maximize_button.toolTip() == "Restore"
+    change_language("auto", "General")
+    actual = lang.current_lang
+    try:
+        lang.current_lang = "zh-CN"
+        assert interface_language() == "zh_CN"
+        lang.current_lang = "en_US"
+        assert interface_language() == "en"
+    finally:
+        lang.current_lang = actual
+
+    board.bar.minimize_button.click()
+    until(board.isMinimized, "canvas minimized from the title bar")
+    session = board._session
+    js(editor.web, "document.getElementById('caliplus_editor').click()")
+    until(lambda: board.isVisible() and not board.isMinimized(), "editor button restores minimized canvas")
+    assert board.isMaximized() and board._session == session, "restore should keep the editor session and window mode"
+    board.bar.maximize_button.click()
+    until(lambda: not board.isMaximized(), "canvas restored to normal size")
+    assert board.size() == normal_size
+    assert js(board.web, "ankiBridge.dump()") == original
+
+
 def add_mode(mw, addon):
     from anki_cali_draw_plus.drawing_media import drawing_refs
 
@@ -140,6 +212,7 @@ def add_mode(mw, addon):
     board = until(lambda: addon._editor_board._target.editor is editor and addon._editor_board,
                   "Add mode opens a separate drawing")
     js(board.web, "ankiBridge.load('[{\"t\":\"pen\",\"c\":\"auto\",\"w\":3,\"p\":[[25,30]]}]')")
+    editor_window_controls(board, editor)
     js(board.web, whole("Insert into note"))
     ref = until(lambda: drawing_refs("Back", editor.note["Back"]), "image inserted in Add mode")[0]
     until(lambda: editor_image(editor.web, ref.filename), "Add editor image")
@@ -156,7 +229,7 @@ def github_update(mw, addon):
     manifest = target / "manifest.json"
     current = json.loads(manifest.read_bytes())
     # Exercise the menu with an artificially older version in the isolated copy.
-    manifest.write_text(json.dumps({**current, "human_version": "0.1.0"}))
+    manifest.write_text(json.dumps({**current, "human_version": "0.1.1"}))
     manager = mw.addonManager
     saved = {**manager.getConfig("anki_cali_draw_plus"), "cursor_size": 31}
     manager.writeConfig("anki_cali_draw_plus", saved)

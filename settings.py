@@ -25,6 +25,7 @@ from aqt.qt import (
 from aqt.utils import showWarning
 
 from .blackboard import ADDON, DEFAULT_SAVE, get_config
+from .i18n import tr
 
 LAST_FIELD_LABEL = "(Last field of the note)"
 
@@ -32,7 +33,7 @@ LAST_FIELD_LABEL = "(Last field of the note)"
 def _combo(items: list) -> QComboBox:
     box = QComboBox()
     for label, value in items:
-        box.addItem(label, value)
+        box.addItem(tr(label), value)
     return box
 
 
@@ -42,7 +43,7 @@ def _select(box: QComboBox, value) -> None:
 
 
 def _hint(text: str) -> QLabel:
-    label = QLabel(text)
+    label = QLabel(tr(text))
     label.setWordWrap(True)
     label.setStyleSheet("color: gray;")
     return label
@@ -69,21 +70,27 @@ class SettingsDialog(QDialog):
     def __init__(self, parent: QWidget, on_saved: Optional[Callable[[dict, dict], None]] = None) -> None:
         super().__init__(parent)
         self._on_saved = on_saved
-        self.setWindowTitle("Anki-Cali Draw Plus - Settings")
+        self.setWindowTitle(tr("Anki-Cali Draw Plus - Settings"))
         self.setMinimumWidth(470)
 
         tabs = QTabWidget()
-        tabs.addTab(self._tab_general(), "General")
-        tabs.addTab(self._tab_blackboard(), "Blackboard")
-        tabs.addTab(self._tab_drawing(), "Drawing")
-        tabs.addTab(self._tab_save(), "Save to card")
-        tabs.addTab(self._tab_toolbar(), "Toolbar")
+        tabs.addTab(self._tab_general(), tr("General"))
+        tabs.addTab(self._tab_blackboard(), tr("Blackboard"))
+        tabs.addTab(self._tab_drawing(), tr("Drawing"))
+        tabs.addTab(self._tab_save(), tr("Save to card"))
+        tabs.addTab(self._tab_toolbar(), tr("Toolbar"))
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save
             | QDialogButtonBox.StandardButton.Cancel
             | QDialogButtonBox.StandardButton.RestoreDefaults
         )
+        for button, label in (
+            (QDialogButtonBox.StandardButton.Save, "Save"),
+            (QDialogButtonBox.StandardButton.Cancel, "Cancel"),
+            (QDialogButtonBox.StandardButton.RestoreDefaults, "Restore Defaults"),
+        ):
+            buttons.button(button).setText(tr(label))
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(self._restore)
@@ -107,10 +114,12 @@ class SettingsDialog(QDialog):
         )
         self.k_board = QKeySequenceEdit()
         self.k_annot = QKeySequenceEdit()
-        form.addRow("Theme:", self.theme)
-        form.addRow("When the card changes:", self.persist)
-        form.addRow("Blackboard shortcut:", self.k_board)
-        form.addRow("Annotate shortcut:", self.k_annot)
+        self.language = _combo([("Follow Anki", "auto"), ("English", "en"), ("简体中文", "zh_CN")])
+        form.addRow(tr("Interface language:"), self.language)
+        form.addRow(tr("Theme:"), self.theme)
+        form.addRow(tr("When the card changes:"), self.persist)
+        form.addRow(tr("Blackboard shortcut:"), self.k_board)
+        form.addRow(tr("Annotate shortcut:"), self.k_annot)
         form.addRow(_hint("Click a shortcut box and press the keys you want. Ctrl is Cmd on macOS."))
         return w
 
@@ -131,15 +140,15 @@ class SettingsDialog(QDialog):
         self.opacity = QSpinBox()
         self.opacity.setRange(0, 100)
         self.opacity.setSuffix(" %")
-        self.opacity.setToolTip("0 % = fully transparent background, 100 % = solid. Default: 40 %")
-        self.solid = QCheckBox("Solid blackboard (100 % opacity, no see-through)")
+        self.opacity.setToolTip(tr("0 % = fully transparent background, 100 % = solid. Default: 40 %"))
+        self.solid = QCheckBox(tr("Solid blackboard (100 % opacity, no see-through)"))
         self.solid.toggled.connect(lambda on: self.opacity.setEnabled(not on))
-        self.auto_open = QCheckBox("Open the blackboard automatically when a review starts")
-        self.auto_hide = QCheckBox("Hide it when I leave the reviewer")
-        form.addRow("Opens:", self.placement)
-        form.addRow("Width:", self.width_px)
+        self.auto_open = QCheckBox(tr("Open the blackboard automatically when a review starts"))
+        self.auto_hide = QCheckBox(tr("Hide it when I leave the reviewer"))
+        form.addRow(tr("Opens:"), self.placement)
+        form.addRow(tr("Width:"), self.width_px)
         form.addRow(self.solid)
-        form.addRow("Opacity:", self.opacity)
+        form.addRow(tr("Opacity:"), self.opacity)
         form.addRow(self.auto_open)
         form.addRow(self.auto_hide)
         form.addRow(_hint("Opacity range: 0 % (fully transparent - only your ink and the tools are visible) to 100 % (solid). The default is 40 %; tick \"Solid blackboard\" if you prefer 100 %. Lower values fade the blackboard's background so you can see the card behind it - best with the \"Over the card\" position. Your ink always stays solid. On Linux this needs a compositing window manager."))
@@ -148,7 +157,7 @@ class SettingsDialog(QDialog):
     def _tab_drawing(self) -> QWidget:
         w, form = QWidget(), QFormLayout()
         w.setLayout(form)
-        self.pressure_on = QCheckBox("Pressure sensitivity: lines get thicker the harder you press")
+        self.pressure_on = QCheckBox(tr("Pressure sensitivity: lines get thicker the harder you press"))
         self.pressure_strength = QSpinBox()
         self.pressure_strength.setRange(0, 100)
         self.pressure_strength.setSuffix(" %")
@@ -167,13 +176,13 @@ class SettingsDialog(QDialog):
         )
         self.k_zen = QKeySequenceEdit()
         form.addRow(self.pressure_on)
-        form.addRow("Strength:", self.pressure_strength)
+        form.addRow(tr("Strength:"), self.pressure_strength)
         form.addRow(_hint("Needs a pressure-sensitive pen. Mouse and finger strokes have a constant width."))
-        form.addRow("Finger input:", self.touch_mode)
-        form.addRow("Pen cursor:", self.cursor_shape)
-        form.addRow("Cursor size:", self.cursor_size)
-        form.addRow("Zen mode:", self.zen_mode)
-        form.addRow("Zen shortcut:", self.k_zen)
+        form.addRow(tr("Finger input:"), self.touch_mode)
+        form.addRow(tr("Pen cursor:"), self.cursor_shape)
+        form.addRow(tr("Cursor size:"), self.cursor_size)
+        form.addRow(tr("Zen mode:"), self.zen_mode)
+        form.addRow(tr("Zen shortcut:"), self.k_zen)
         form.addRow(
             _hint(
                 "Zen mode hides every tool and the title bar so only your drawing is left. "
@@ -188,12 +197,12 @@ class SettingsDialog(QDialog):
         w, outer = QWidget(), QVBoxLayout()
         w.setLayout(outer)
 
-        where = QGroupBox("Where should the drawing be pasted?")
+        where = QGroupBox(tr("Where should the drawing be pasted?"))
         wl = QVBoxLayout(where)
-        self.radio_ask = QRadioButton("Ask me every time")
-        self.radio_field = QRadioButton("Always use this field:")
+        self.radio_ask = QRadioButton(tr("Ask me every time"))
+        self.radio_field = QRadioButton(tr("Always use this field:"))
         self.field = QComboBox()
-        self.field.addItem(LAST_FIELD_LABEL, "")
+        self.field.addItem(tr(LAST_FIELD_LABEL), "")
         for name in _all_field_names():
             self.field.addItem(name, name)
         self.radio_field.toggled.connect(self.field.setEnabled)
@@ -204,7 +213,7 @@ class SettingsDialog(QDialog):
                            "When you draw from the card editor, the field you were editing is used first."))
         outer.addWidget(where)
 
-        fmt, form = QGroupBox("Picture"), QFormLayout()
+        fmt, form = QGroupBox(tr("Picture")), QFormLayout()
         fmt.setLayout(form)
         self.insert_pos = _combo(
             [
@@ -218,11 +227,11 @@ class SettingsDialog(QDialog):
         self.scale.setSingleStep(0.25)
         self.scale.setDecimals(2)
         self.scale.setSuffix("x")
-        self.scale.setToolTip("1x = as drawn on the blackboard, 2x = twice as large on the card ...")
-        self.bg = QCheckBox("Include a background (otherwise transparent)")
-        self.dark_export = QCheckBox("Dark background and light ink")
-        form.addRow("Insert:", self.insert_pos)
-        form.addRow("Size on card:", self.scale)
+        self.scale.setToolTip(tr("1x = as drawn on the blackboard, 2x = twice as large on the card ..."))
+        self.bg = QCheckBox(tr("Include a background (otherwise transparent)"))
+        self.dark_export = QCheckBox(tr("Dark background and light ink"))
+        form.addRow(tr("Insert:"), self.insert_pos)
+        form.addRow(tr("Size on card:"), self.scale)
         form.addRow(_hint("1x = the size you drew it, 2x = twice as large, up to 8x. Pictures are always saved sharp; very wide ones may still be limited by your card template's own width rules."))
         form.addRow(self.bg)
         form.addRow(self.dark_export)
@@ -233,10 +242,10 @@ class SettingsDialog(QDialog):
     def _tab_toolbar(self) -> QWidget:
         w, lay = QWidget(), QVBoxLayout()
         w.setLayout(lay)
-        self.show_board = QCheckBox("Show the Blackboard button in Anki's top toolbar")
-        self.show_annot = QCheckBox("Show the Annotate button in Anki's top toolbar")
-        self.show_editor = QCheckBox("Show drawing buttons in the card editor (Add / Edit / Browser)")
-        self.hide_upstream = QCheckBox("Hide duplicate buttons from the original Anki-Cali Draw")
+        self.show_board = QCheckBox(tr("Show the Blackboard button in Anki's top toolbar"))
+        self.show_annot = QCheckBox(tr("Show the Annotate button in Anki's top toolbar"))
+        self.show_editor = QCheckBox(tr("Show drawing buttons in the card editor (Add / Edit / Browser)"))
+        self.hide_upstream = QCheckBox(tr("Hide duplicate buttons from the original Anki-Cali Draw"))
         lay.addWidget(self.show_board)
         lay.addWidget(self.show_annot)
         lay.addWidget(self.show_editor)
@@ -248,6 +257,7 @@ class SettingsDialog(QDialog):
     # ----------------------------------------------------------- load/collect
     def _load(self, cfg: dict) -> None:
         save = {**DEFAULT_SAVE, **(cfg.get("save_to_card") or {})}
+        _select(self.language, cfg.get("interface_language", "auto"))
         _select(self.theme, cfg.get("theme", "auto"))
         _select(self.persist, cfg.get("persistence", "clear_on_next"))
         self.k_board.setKeySequence(QKeySequence(cfg.get("shortcut", "Ctrl+Alt+Shift+E")))
@@ -305,6 +315,7 @@ class SettingsDialog(QDialog):
             export_dark_mode=self.dark_export.isChecked(),
         )
         cfg.update(
+            interface_language=self.language.currentData(),
             theme=self.theme.currentData(),
             persistence=self.persist.currentData(),
             shortcut=_key_text(self.k_board),
@@ -338,10 +349,10 @@ class SettingsDialog(QDialog):
         cfg = self._collect()
         keys = [k for k in (cfg["shortcut"], cfg["annotate_shortcut"], cfg["zen_shortcut"]) if k]
         if len(keys) != len(set(keys)):
-            showWarning("The Blackboard, Annotate and Zen shortcuts must all be different.", parent=self)
+            showWarning(tr("The Blackboard, Annotate and Zen shortcuts must all be different."), parent=self)
             return
         old = json.loads(json.dumps(get_config()))
         mw.addonManager.writeConfig(ADDON, cfg)
+        self.accept()
         if self._on_saved:
             self._on_saved(old, cfg)
-        self.accept()

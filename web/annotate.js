@@ -19,6 +19,7 @@ document.body.appendChild(host);
 const $=id=>root.getElementById(id),wrap=$("wrap"),bar=$("bar"),top=$("top");
 
 const S={pressure:.7,zen:"writing",zenKey:"",favs:["#e03131","#1971c2","#2f9e44","#f08c00","#9c36b5"]};
+const L=C.localizer(S),tr=L.tr;
 let live=true,zenHidden=false,busyTimer=null,shown=false;
 C.installTips(wrap);
 
@@ -28,9 +29,9 @@ const D=C.engine({base:$("base"),top:top,ring:$("ring"),view:{x:0,y:0,z:1},docMo
   hooks:{sel:onSel,busy:onBusy}});
 
 /* ---- toolbar ---- */
-function btn(html,tip,fn,cls){const b=C.el("button",cls||"",html);if(tip)b.setAttribute("data-tip",tip);if(fn)b.onclick=fn;bar.appendChild(b);return b}
+function btn(html,tip,fn,cls){const b=C.el("button",cls||"",html);if(tip)L.tip(b,tip);if(fn)b.onclick=fn;bar.appendChild(b);return b}
 const sep=()=>bar.appendChild(C.el("div","ad-sep"));
-const grip=C.el("div","grip","\u22EE\u22EE");grip.setAttribute("data-tip","Drag to move this toolbar");bar.appendChild(grip);
+const grip=C.el("div","grip","\u22EE\u22EE");L.tip(grip,"Drag to move this toolbar");bar.appendChild(grip);
 let gdrag=null;
 grip.addEventListener("pointerdown",e=>{try{grip.setPointerCapture(e.pointerId)}catch(_){}const r=bar.getBoundingClientRect();gdrag=[e.clientX-r.left,e.clientY-r.top]});
 grip.addEventListener("pointermove",e=>{if(!gdrag)return;if(e.pointerType==="mouse"&&e.buttons===0){gdrag=null;return}
@@ -39,7 +40,7 @@ grip.addEventListener("pointermove",e=>{if(!gdrag)return;if(e.pointerType==="mou
 
 const modeBtn=btn(svg(P.pointer),"Interact with the card (click a tool to draw again)",()=>setLive(!live));
 function setLive(v){D.endInput();live=v;top.classList.toggle("live",v);modeBtn.classList.toggle("on",!v);
-  modeBtn.setAttribute("data-tip",v?"Drawing. Click to interact with the card":"Interacting. Click to draw again");
+  L.tip(modeBtn,v?"Drawing. Click to interact with the card":"Interacting. Click to draw again");
   if(!v)$("ring").style.display="none"}
 sep();
 const tb={};
@@ -54,17 +55,17 @@ const same=(a,b)=>String(a).toLowerCase()===String(b).toLowerCase();
 function markSwatch(){[...swHost.querySelectorAll(".ad-sw[data-c]")].forEach(b=>b.classList.toggle("on",same(b.getAttribute("data-c"),D.color)))}
 function pick(c){D.setColor(c,true);markSwatch()}
 function setFavs(f){S.favs=f;renderSwatches();picker.renderFavs();pycmd("caliplus:favs:"+JSON.stringify(f))}
-function sbtn(tip,fn,cls){const b=C.el("button",cls);b.setAttribute("data-tip",tip);b.onclick=fn;swHost.appendChild(b);return b}
+function sbtn(tip,fn,cls){const b=C.el("button",cls);L.tip(b,tip);b.onclick=fn;swHost.appendChild(b);return b}
 function renderSwatches(){
   swHost.innerHTML="";
   const ink=sbtn("Default (yellow for highlighter)",()=>pick("auto"),"ad-sw");ink.setAttribute("data-c","auto");ink.style.background="linear-gradient(135deg,#1e1e1e 50%,#ffd43b 50%)";
-  S.favs.forEach((c,i)=>{const b=sbtn("Favourite "+(i+1)+" (right-click: replace with the current colour)",()=>pick(c),"ad-sw");
+  S.favs.forEach((c,i)=>{const b=sbtn(tr("Favourite {number} (right-click: replace with the current colour)",{number:i+1}),()=>pick(c),"ad-sw");
     b.setAttribute("data-c",c);b.style.background=c;
     b.oncontextmenu=ev=>{ev.preventDefault();if(D.color!=="auto"&&!same(D.color,c)){const f=S.favs.slice();f[i]=D.color;setFavs(f)}}});
   const sp=sbtn("Colour spectrum - pick any colour, save 5 favourites",()=>picker.toggle(),"ad-sw ad-spec");sp.setAttribute("data-spec","1");
   markSwatch();
 }
-const picker=C.makePicker({parent:wrap,getColor:()=>D.color,getFavs:()=>S.favs,setFavs:setFavs,
+const picker=C.makePicker({parent:wrap,tr:tr,getColor:()=>D.color,getFavs:()=>S.favs,setFavs:setFavs,
   onPick:(c,final)=>{D.setColor(c,final);markSwatch()},
   place:pop=>{const r=bar.getBoundingClientRect();
     pop.style.left=Math.max(8,Math.min(innerWidth-pop.offsetWidth-8,r.left+r.width/2-pop.offsetWidth/2))+"px";
@@ -75,8 +76,9 @@ sep();
 /* thickness slider */
 const wbox=C.el("div","ad-wrap"),wdot=C.el("div","ad-wdot","<i></i>"),wl=C.el("div","ad-wl","3");
 function showWidth(w){wl.textContent=w;wdot.firstChild.style.width=wdot.firstChild.style.height=Math.min(20,Math.max(2,w))+"px"}
-const ws=C.makeSlider({min:1,max:40,step:.5,value:3,vertical:false,tip:"Pen thickness (slide right = thicker)",
+const ws=C.makeSlider({min:1,max:40,step:.5,value:3,vertical:false,
   onInput:v=>{D.setWidth(v);showWidth(v)},onChange:()=>D.applyWidthToSelection()});
+L.tip(ws.el,"Pen thickness (slide right = thicker)");
 wbox.appendChild(wdot);wbox.appendChild(ws.el);wbox.appendChild(wl);bar.appendChild(wbox);showWidth(3);
 sep();
 
@@ -84,14 +86,14 @@ btn(svg(P.undo),"Undo",D.undo);btn(svg(P.redo),"Redo",D.redo);
 const trashBtn=btn(svg(P.trash),"Clear annotations",()=>D.hasSel?D.delSel():D.clear());
 const eyeBtn=btn(svg(P.eye),"",()=>api.toggleZen());
 sep();
-btn(svg(P.copy)+"Copy","Copy the card with your annotations to the clipboard",()=>pycmd("caliplus:copy"),"pri");
+const copyBtn=btn(svg(P.copy)+"Copy","Copy the card with your annotations to the clipboard",()=>pycmd("caliplus:copy"),"pri");
 btn(svg(P.gear),"Anki-Cali Draw Plus settings",()=>pycmd("caliplus:settings"));
 btn(svg(P.close),"Close annotation mode",()=>{api.hide();pycmd("caliplus:closed")});
-function onSel(n){trashBtn.setAttribute("data-tip",n?"Delete selection":"Clear annotations")}
+function onSel(n){L.tip(trashBtn,n?"Delete selection":"Clear annotations")}
 
 /* ---- zen mode ---- */
-const ghost=C.el("button","ad-ghost",svg(P.eye));ghost.setAttribute("data-tip","Show the tools again");ghost.onclick=()=>api.toggleZen();wrap.appendChild(ghost);
-function updateZenTip(){eyeBtn.setAttribute("data-tip","Zen mode: hide all tools. Bring them back with the faint eye in the corner")}
+const ghost=C.el("button","ad-ghost",svg(P.eye));L.tip(ghost,"Show the tools again");ghost.onclick=()=>api.toggleZen();wrap.appendChild(ghost);
+function updateZenTip(){L.tip(eyeBtn,"Zen mode: hide all tools. Bring them back with the faint eye in the corner")}
 function applyZen(){wrap.classList.toggle("zen",zenHidden);if(zenHidden)picker.close()}
 function onBusy(b){
   if(S.zen!=="writing")return;
@@ -104,7 +106,8 @@ function configure(o){
   const zen=S.zen;Object.assign(S,o);
   D.configureInput();
   if("dark" in o){wrap.classList.toggle("dark",!!o.dark);D.redraw()}
-  if("favs" in o){renderSwatches();picker.renderFavs()}
+  if("strings" in o){L.refresh(wrap);copyBtn.lastChild.nodeValue=tr("Copy")}
+  if("favs" in o||"strings" in o){renderSwatches();picker.renderFavs()}
   if("zenKey" in o)updateZenTip();
   if("zen" in o&&o.zen!==zen){zenHidden=S.zen==="toggle";wrap.classList.remove("writing");applyZen()}
 }

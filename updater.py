@@ -14,6 +14,8 @@ from zipfile import ZipFile
 from aqt.addons import InstallOk
 from aqt.utils import askUser, openLink, showInfo, showWarning
 
+from .i18n import tr
+
 REPO = "Saner123321/anki-cali-draw-plus"
 RELEASES = f"https://github.com/{REPO}/releases"
 LATEST = f"https://api.github.com/repos/{REPO}/releases/latest"
@@ -99,14 +101,14 @@ def check_for_updates(mw, action):
             update = future.result()
         except Exception:
             _LOG.exception("Could not fetch the Plus release from GitHub")
-            if askUser("Could not check or download the update. Open GitHub Releases in your browser?", parent=mw, defaultno=True):
+            if askUser(tr("Could not check or download the update. Open GitHub Releases in your browser?"), parent=mw, defaultno=True):
                 openLink(f"{RELEASES}/latest")
             return
         if update is None:
-            showInfo("Anki-Cali Draw Plus is up to date.", parent=mw)
+            showInfo(tr("Anki-Cali Draw Plus is up to date."), parent=mw)
             return
         version, package = update
-        if not askUser(f"Install Anki-Cali Draw Plus {version} from GitHub?", parent=mw, defaultno=True):
+        if not askUser(tr("Install Anki-Cali Draw Plus {version} from GitHub?", version=version), parent=mw, defaultno=True):
             return
         try:
             result = mw.addonManager.install(BytesIO(package))
@@ -114,9 +116,9 @@ def check_for_updates(mw, action):
                 raise ValueError("Anki rejected the update")
         except Exception:
             _LOG.exception("Could not install the Plus update")
-            showWarning("Could not install the update. You can install it from the GitHub Releases page.", parent=mw)
+            showWarning(tr("Could not install the update. You can install it from the GitHub Releases page."), parent=mw)
             return
         action.setEnabled(False)
-        showInfo(f"Anki-Cali Draw Plus {version} was installed. Restart Anki to use it.", parent=mw)
+        showInfo(tr("Anki-Cali Draw Plus {version} was installed. Restart Anki to use it.", version=version), parent=mw)
 
-    mw.taskman.with_progress(check, on_done=checked, parent=mw, label="Checking GitHub for updates…", uses_collection=False)
+    mw.taskman.with_progress(check, on_done=checked, parent=mw, label=tr("Checking GitHub for updates…"), uses_collection=False)

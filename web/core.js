@@ -29,6 +29,22 @@ const svg=(p,w)=>'<svg viewBox="0 0 24 24" width="18" height="18" fill="none" st
 const el=(tag,cls,html)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(html!=null)e.innerHTML=html;return e};
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 
+function localizer(settings){
+  const tr=(source,values)=>{
+    const message=(settings.strings&&settings.strings[source])||source;
+    return values?message.replace(/\{(\w+)\}/g,(_,key)=>values[key]):message;
+  };
+  function tip(node,source){
+    node.setAttribute("data-cali-tip",source);
+    node.setAttribute("data-tip",tr(source));
+    node.setAttribute("aria-label",tr(source));
+  }
+  function refresh(root){
+    for(const node of root.querySelectorAll("[data-cali-tip]"))tip(node,node.getAttribute("data-cali-tip"));
+  }
+  return {tr,tip,refresh};
+}
+
 const CSS=`
 .ad-root{--fg:#1e1e1e;--isl:#fff;--bd:#e1e1ea;--ac:#6965db;--acl:#e3e2fe;--on:#fff;--mut:#7a7a8c;color:var(--fg);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-user-select:none;user-select:none}
 .ad-root.dark{--fg:#e6e6e6;--isl:#2a2a31;--bd:#454552;--ac:#a8a5ff;--acl:#3e3c66;--on:#121212;--mut:#9a9aab}
@@ -130,7 +146,7 @@ function makePicker(h){
   const pop=el("div","ad-pop ad-ui",
     '<canvas class="ad-sv" width="180" height="120"></canvas><input class="ad-hue" type="range" min="0" max="360" step="1">'+
     '<div class="ad-row"><span class="ad-prev"></span><input class="ad-hex" maxlength="7" spellcheck="false"></div>'+
-    '<div class="ad-fl">Favourites: click a slot to save this colour there</div><div class="ad-favs"></div>');
+    '<div class="ad-fl"></div><div class="ad-favs"></div>');
   pop.style.display="none";h.parent.appendChild(pop);
   const sv=pop.querySelector(".ad-sv"),hue=pop.querySelector(".ad-hue"),hex=pop.querySelector(".ad-hex"),
         prev=pop.querySelector(".ad-prev"),slots=pop.querySelector(".ad-favs"),g=sv.getContext("2d");
@@ -154,8 +170,9 @@ function makePicker(h){
   hex.addEventListener("change",()=>{let v=hex.value.trim();if(v[0]!=="#")v="#"+v;if(setHex(v))h.onPick(cur(),true);else hex.value=cur()});
   hex.addEventListener("keydown",e=>e.stopPropagation());
   function renderFavs(){
+    pop.querySelector(".ad-fl").textContent=h.tr("Favourites: click a slot to save this colour there");
     slots.innerHTML="";
-    h.getFavs().forEach((c,i)=>{const b=el("button","ad-sw");b.style.background=c;b.setAttribute("data-tip","Save this colour in slot "+(i+1));
+    h.getFavs().forEach((c,i)=>{const b=el("button","ad-sw");b.style.background=c;b.setAttribute("data-tip",h.tr("Save this colour in slot {number}",{number:i+1}));
       b.onclick=()=>{const f=h.getFavs().slice();f[i]=cur();h.setFavs(f);renderFavs()};slots.appendChild(b)});
   }
   const api={
@@ -528,5 +545,5 @@ function engine(o){
   };
 }
 
-return{P:P,svg:svg,el:el,clamp:clamp,CSS:CSS,installTips:installTips,makePicker:makePicker,makeSlider:makeSlider,engine:engine,hsv2hex:hsv2hex,hex2hsv:hex2hsv};
+return{P:P,svg:svg,el:el,clamp:clamp,CSS:CSS,localizer:localizer,installTips:installTips,makePicker:makePicker,makeSlider:makeSlider,engine:engine,hsv2hex:hsv2hex,hex2hsv:hex2hsv};
 })();

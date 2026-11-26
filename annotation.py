@@ -17,6 +17,7 @@ from aqt.theme import theme_manager
 from aqt.utils import tooltip
 
 from .blackboard import FAVORITE_LISTENERS, get_config, get_favorites, input_settings, pressure_value, save_favorites, zen_mode
+from .i18n import tr, web_strings
 
 _WEB = os.path.join(os.path.dirname(__file__), "web")
 
@@ -53,6 +54,7 @@ class AnnotationOverlay:
         return {
             "dark": self._dark(),
             "pressure": pressure_value(),
+            "strings": web_strings(),
             **input_settings(),
             "zen": zen_mode(),
             "zenKey": get_config().get("zen_shortcut", "Alt+Shift+Z"),
@@ -87,7 +89,7 @@ class AnnotationOverlay:
         if self.enabled:
             self.disable()
         elif mw.state != "review":
-            tooltip("Annotation mode is available while reviewing.")
+            tooltip(tr("Annotation mode is available while reviewing."))
         else:
             self.enabled = True
             self._inject_and_show()
@@ -147,6 +149,6 @@ class AnnotationOverlay:
         def grab() -> None:
             QApplication.clipboard().setPixmap(web.grab())
             self._call("__caliplus.unprep()")
-            tooltip("Card with annotations copied to clipboard.")
+            tooltip(tr("Card with annotations copied to clipboard."))
 
         web.evalWithCallback("__caliplus.prep()", lambda _r: QTimer.singleShot(80, grab))

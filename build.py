@@ -5,7 +5,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 ROOT = Path(__file__).resolve().parent
-FILES = ("LICENSE", "README.md", "__init__.py", "annotation.py", "blackboard.py", "drawing_media.py",
+FILES = ("LICENSE", "README.md", "README.en.md", "__init__.py", "annotation.py", "blackboard.py", "drawing_media.py",
          "settings.py", "i18n.py", "updater.py", "manifest.json", "config.json", "config.md", "web/annotate.js",
          "web/board.html", "web/core.js", "web/scene.js")
 

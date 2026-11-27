@@ -1,6 +1,15 @@
 # Anki-Cali Draw Plus
 
-基于 Anki-Cali Draw 的桌面 Anki 手写插件。用触控笔在无限画布上写字，用手指移动和缩放画布。插入卡片的手写可以重新打开，继续逐笔编辑。
+**简体中文** · [English](README.en.md)
+
+Anki-Cali Draw Plus 是基于 Anki-Cali Draw 的桌面 Anki 手写插件。感谢 Anki-Cali Draw 原作者开发并分享了这个插件。 [AnkiWeb 上的原版（1205964508）](https://ankiweb.net/shared/info/1205964508)
+
+## Plus 新增功能
+
+- **手笔分离**。用触控笔在无限画布上书写，用手指平移画布，无需切换工具。
+- **双指缩放**。在画板上用双指捏合缩放，也可以用双指平移。
+- **可重新编辑的 SVG 笔迹**。插入卡片后仍可重新打开，逐笔选择、移动、擦除或继续绘制。
+- **笔尖光标与粗细记忆**。可调整光标形状和大小，也可隐藏光标。画板会记住上次选择的笔尖粗细。
 
 ## 使用
 
@@ -33,10 +42,14 @@ Plus 有自己的 **工具 → Anki-Cali Draw Plus → Check for updates (GitHub
 
 ## 构建和更新上游
 
-运行 `python build.py` 生成安装包。`upstream/ankiweb` 保存原始发行版快照，基线标签为 `upstream-1205964508-1794405980`。未来 AnkiWeb 发布更新时，在这个分支用新版发行包替换对应的源文件并提交，排除本机 `meta.json`、用户配置和缓存。为新版本打标签，再在 `main` 合并 `upstream/ankiweb`，解决冲突后重新运行桌面和同步测试。
+运行 `python build.py` 生成安装包。`upstream/ankiweb` 保存原版 1.3.2 的发行包快照，基线标签为 `upstream-1205964508-1794405980`。未来 AnkiWeb 发布更新时，在这个分支用新版发行包替换对应的源文件并提交，排除本机 `meta.json`、用户配置和缓存。为新版本打标签，再在 `main` 合并 `upstream/ankiweb`，解决冲突后重新运行桌面和同步测试。
 
 发布 Plus 时更新 `manifest.json` 的 `human_version`，提交并推送对应的 `vX.Y.Z` 标签。GitHub Actions 会构建安装包并发布 Release。原版的 AnkiWeb 更新可以独立安装，合并进 Plus 需要走上游导入流程。
 
-Anki-Cali Draw 原作来自 AnkiWeb `1205964508`，页面版本为 1.3.2。原包的 MIT 许可证原样保留，文件中的版权署名仍为 `<YOUR NAME>`，可取得的上游资料里未核实到作者姓名。 [Anki-Cali Draw 原版](https://ankiweb.net/shared/info/1205964508)
+## 许可证
+
+仓库和 `.ankiaddon` 安装包原样保留上游的 MIT 许可证与版权声明。上游版权行中的 `<YOUR NAME>` 占位符也按原样保留。 [LICENSE](LICENSE)
+
+## 源码参考
 
 实现前阅读了 AnkiDraw 的压感采样、平滑和 `touch-action` 处理，以及 Image Editor Enhanced 的 SVG 重开桥接、`write_data()` 和图片引用更新。Plus 使用自己的输入路由和格式，第三方项目仅作为源码参考。 [AnkiDraw 源码](https://github.com/Rytisgit/Anki-StylusDraw/tree/858f5f4be1a5a9945ae87450460dfc1c75cfb83f/AnkiDraw) · [Image Editor Enhanced 源码](https://github.com/Ficello/Anki-Image-Editor-Enhanced-Edition-/tree/4675b50cc07e1defb3e8672870a572186aa8d68e)

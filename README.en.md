@@ -1,10 +1,12 @@
 # Anki-Cali Draw Plus
 
-[简体中文](README.md) · **English**
+[简体中文](README.md) · **English** · [Download the latest release](https://github.com/Saner123321/anki-cali-draw-plus/releases/latest) · [Changelog](https://github.com/Saner123321/anki-cali-draw-plus/blob/main/CHANGELOG.md)
 
-Anki-Cali Draw Plus is a desktop Anki handwriting add-on based on Anki-Cali Draw. Thanks to the original author for developing and sharing the add-on. [Original add-on on AnkiWeb (1205964508)](https://ankiweb.net/shared/info/1205964508)
+Anki-Cali Draw Plus is a desktop Anki handwriting add-on based on Anki-Cali Draw. Write with a stylus on an infinite canvas, save your ink to a card, and reopen it whenever you need to edit. You can also copy strokes to another canvas or note and keep editing them there.
 
-## What's new in Plus
+Thanks to the original author for developing and sharing the add-on. [Original add-on on AnkiWeb (1205964508)](https://ankiweb.net/shared/info/1205964508)
+
+## Plus features
 
 - **Separate pen and touch controls.** Write with a stylus on the infinite canvas and pan with a finger without switching tools.
 - **Two-finger gestures.** Pinch to zoom or pan with two fingers on the blackboard.
@@ -51,7 +53,7 @@ In the default touch mode, fingers navigate the canvas. When the stylus touches 
 
 Run `python build.py` to create an installable package. The `upstream/ankiweb` branch holds the original 1.3.2 release snapshot, tagged `upstream-1205964508-1794405980`. If a new upstream release appears, import it on that branch, leaving out local `meta.json`, user settings, and caches. Tag the imported version, merge the branch into `main`, resolve any conflicts, and rerun the desktop and sync tests.
 
-To release Plus, update `human_version` in `manifest.json`, commit the change, and push the matching `vX.Y.Z` tag. GitHub Actions builds the package and publishes the release. Original AnkiWeb updates can be installed separately. Bringing their changes into Plus uses the upstream import process.
+To release Plus, update `human_version` in `manifest.json` and add notes for that version to `CHANGELOG.md`. Commit and push the matching `vX.Y.Z` tag. GitHub Actions builds the package and publishes that version's notes on GitHub Releases. Original AnkiWeb updates can be installed separately. Bringing their changes into Plus uses the upstream import process.
 
 ## License
 

@@ -20,4 +20,15 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/*.ankiaddon dist/update.json --verify-tag --generate-notes --latest
+        run: |
+          awk -v header="## $GITHUB_REF_NAME" '
+            { sub(/\r$/, "") }
+            $0 == header { in_section = 1; next }
+            in_section && /^## / { exit }
+            in_section { print }
+          ' CHANGELOG.md > dist/release-notes.md
+          if ! grep -q '^- ' dist/release-notes.md; then
+            echo "::error::Missing release notes for $GITHUB_REF_NAME in CHANGELOG.md"
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/*.ankiaddon dist/update.json --verify-tag --notes-file dist/release-notes.md --generate-notes --latest

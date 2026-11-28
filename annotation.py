@@ -16,8 +16,9 @@ from aqt.qt import QApplication, QTimer
 from aqt.theme import theme_manager
 from aqt.utils import tooltip
 
-from .blackboard import (DRAWING_SETTINGS_LISTENERS, get_config, get_favorites, input_settings,
+from .blackboard import (DRAWING_SETTINGS_LISTENERS, export_settings, get_config, get_favorites, input_settings,
                          pressure_value, save_favorites, save_pen_width, zen_mode)
+from .drawing_clipboard import copy_drawing, paste_strokes
 from .i18n import tr, web_strings
 
 _WEB = os.path.join(os.path.dirname(__file__), "web")
@@ -44,7 +45,7 @@ class AnnotationOverlay:
     def _inject_and_show(self) -> None:
         if self._js_source is None:
             parts = []
-            for name in ("core.js", "annotate.js"):  # engine first, then the overlay UI
+            for name in ("core.js", "scene.js", "annotate.js"):
                 with open(os.path.join(_WEB, name), encoding="utf-8") as f:
                     parts.append(f.read())
             self._js_source = "\n".join(parts)
@@ -57,6 +58,7 @@ class AnnotationOverlay:
             "pressure": pressure_value(),
             "strings": web_strings(),
             **input_settings(),
+            **export_settings(),
             "zen": zen_mode(),
             "zenKey": get_config().get("zen_shortcut", "Alt+Shift+Z"),
             "favs": get_favorites(),
@@ -143,6 +145,12 @@ class AnnotationOverlay:
             save_pen_width(message[len("caliplus:width:"):])
         elif message == "caliplus:copy":
             self._copy_screenshot()
+        elif self.enabled and message.startswith("caliplus:copy-ink:"):
+            copy_drawing(message[len("caliplus:copy-ink:"):], self._web)
+        elif self.enabled and message == "caliplus:paste":
+            paste_strokes(self._web, lambda groups: self._call(f"__caliplus.paste({groups})"))
+        elif self.enabled and message == "caliplus:empty":
+            tooltip(tr("Canvas is empty"), parent=self._web)
         return (True, None)
 
     def _copy_screenshot(self) -> None:

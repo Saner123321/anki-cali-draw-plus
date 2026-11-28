@@ -14,7 +14,6 @@ shortcut context, so drawing never answers your cards by accident.
 """
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
@@ -24,11 +23,9 @@ from typing import Any, Callable, Optional
 from aqt import mw
 from aqt.operations import CollectionOp
 from aqt.qt import (
-    QApplication,
     QHBoxLayout,
     QColor,
     QEvent,
-    QImage,
     QInputDialog,
     QLabel,
     QToolButton,
@@ -46,6 +43,7 @@ from aqt.theme import theme_manager
 from aqt.utils import askUser, restoreGeom, saveGeom, tooltip
 from aqt.webview import AnkiWebView
 
+from .drawing_clipboard import copy_drawing, paste_strokes
 from .drawing_media import MAX_SVG_BYTES, DrawingRef, drawing_refs, load_scene, media_name
 from .i18n import tr, web_strings
 
@@ -83,6 +81,19 @@ def save_config() -> dict:
     if cfg["image_html"].strip() == _LEGACY_IMAGE_HTML:  # old default saved by earlier versions
         cfg["image_html"] = DEFAULT_SAVE["image_html"]
     return cfg
+
+
+def export_settings() -> dict:
+    config = save_config()
+    try:
+        scale = max(0.25, min(8.0, float(config["export_scale"])))
+    except (TypeError, ValueError):
+        scale = 1.0
+    return {
+        "scale": scale,
+        "exportDark": bool(config["export_dark_mode"]),
+        "exportBackground": bool(config["export_background"]),
+    }
 
 
 def _img_html(template: str, filename: str, width: Optional[int]) -> str:
@@ -317,11 +328,6 @@ class BlackboardWindow(QWidget):
         return "dark" if theme_manager.night_mode else "light"
 
     def _js_settings(self) -> dict:
-        s = save_config()
-        try:
-            scale = max(0.25, min(8.0, float(s["export_scale"])))
-        except (TypeError, ValueError):
-            scale = 1.0
         return {
             "opacity": self._opacity(),
             "pressure": pressure_value(),
@@ -330,9 +336,7 @@ class BlackboardWindow(QWidget):
             "zen": zen_mode(),
             "zenKey": get_config().get("zen_shortcut", "Alt+Shift+Z"),
             "favs": get_favorites(),
-            "scale": scale,
-            "exportDark": bool(s["export_dark_mode"]),
-            "exportBackground": bool(s["export_background"]),
+            **export_settings(),
         }
 
     def _push_settings(self) -> None:
@@ -462,7 +466,10 @@ class BlackboardWindow(QWidget):
         elif cmd.startswith("calidraw:width:"):
             save_pen_width(cmd[len("calidraw:width:"):])
         elif cmd.startswith("calidraw:copy:"):
-            self._copy_png(cmd[len("calidraw:copy:"):].partition(":")[2])
+            copy_drawing(cmd[len("calidraw:copy:"):], self)
+        elif cmd == f"calidraw:paste:{self._session}":
+            session = self._session
+            paste_strokes(self, lambda groups: self._run(f"ankiBridge.paste({session},{groups})"))
         elif cmd.startswith("calidraw:save:"):
             self._save_drawing(cmd[len("calidraw:save:"):])
         return None
@@ -733,9 +740,6 @@ class BlackboardWindow(QWidget):
     # ------------------------------------------------------------------
     # Clipboard / card actions (thin wrappers around the module functions)
     # ------------------------------------------------------------------
-    def _copy_png(self, b64: str) -> None:
-        copy_png(b64, self)
-
     def _save_drawing(self, payload: str) -> None:
         if self._saving or self._destroying:
             return
@@ -850,16 +854,6 @@ class BlackboardWindow(QWidget):
             except RuntimeError as exc:
                 done(tr("Could not reach the editor: {error}", error=str(exc)))
             QTimer.singleShot(10000, lambda: None if flushed_flag else done("The editor did not respond. Try saving again."))
-
-
-def copy_png(b64: str, parent: Optional[QWidget] = None) -> None:
-    """Put a base64 PNG on the system clipboard as an image."""
-    image = QImage()
-    if not image.loadFromData(base64.b64decode(b64), "PNG"):
-        tooltip(tr("Could not copy the drawing."), parent=parent or mw)
-        return
-    QApplication.clipboard().setImage(image)
-    tooltip(tr("Drawing copied to clipboard."), parent=parent or mw)
 
 
 def choose_field(note, parent: Optional[QWidget] = None) -> Optional[str]:

@@ -1,4 +1,4 @@
-/* SVG export uses the same path commands as the canvas renderer. */
+/* Exports use the same path commands as the canvas renderer. */
 window.CaliPlusScene=(function(){
   "use strict";
   const n=value=>Number(value.toFixed(5));
@@ -26,10 +26,14 @@ window.CaliPlusScene=(function(){
     fill(){this.elements.push(`<path d="${this.path.join(" ")}" fill="${this.fillStyle}" opacity="${this.globalAlpha}"/>`)}
   }
 
-  function exportSvg(D,list,settings){
+  function exportBounds(D,list){
     const pad=24;
-    const b=list.length?D.bounds(list):[0,0,0,0];
-    const w=b[2]-b[0]+2*pad,h=b[3]-b[1]+2*pad;
+    const [x0,y0,x1,y1]=list.length?D.bounds(list):[0,0,0,0];
+    return {x:x0-pad,y:y0-pad,w:x1-x0+2*pad,h:y1-y0+2*pad};
+  }
+
+  function exportSvg(D,list,settings){
+    const {x,y,w,h}=exportBounds(D,list);
     const scale=Math.min(settings.scale,16384/Math.max(w,h));
     const width=Math.max(1,Math.round(w*scale)),height=Math.max(1,Math.round(h*scale));
     const ctx=new SvgPaths();
@@ -41,8 +45,24 @@ window.CaliPlusScene=(function(){
       return model;
     });
     const scene=JSON.stringify({version:1,strokes}).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
-    const bg=settings.exportBackground?`<rect x="${b[0]-pad}" y="${b[1]-pad}" width="${w}" height="${h}" fill="${settings.exportDark?"#121212":"#fff"}"/>`:"";
-    return {width,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${b[0]-pad} ${b[1]-pad} ${w} ${h}"><metadata id="cali-draw-plus">${scene}</metadata>${bg}<g fill="none" stroke-linecap="round" stroke-linejoin="round">${ctx.elements.join("")}</g></svg>`};
+    const bg=settings.exportBackground?`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${settings.exportDark?"#121212":"#fff"}"/>`:"";
+    return {width,svg:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="${x} ${y} ${w} ${h}"><metadata id="cali-draw-plus">${scene}</metadata>${bg}<g fill="none" stroke-linecap="round" stroke-linejoin="round">${ctx.elements.join("")}</g></svg>`};
   }
-  return {exportSvg};
+
+  function copyPayload(D,list,settings){
+    const {x,y,w,h}=exportBounds(D,list);
+    const scale=Math.min(settings.scale,4096/Math.max(w,h));
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.ceil(w*scale));canvas.height=Math.max(1,Math.ceil(h*scale));
+    const ctx=canvas.getContext("2d");
+    if(settings.exportBackground){
+      ctx.fillStyle=settings.exportDark?"#121212":"#fff";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+    }
+    ctx.setTransform(scale,0,0,scale,-x*scale,-y*scale);
+    for(const stroke of list)D.drawEl(ctx,stroke,settings.exportDark);
+    const png=canvas.toDataURL("image/png").split(",")[1]||"";
+    return JSON.stringify({svg:exportSvg(D,list,settings).svg,png});
+  }
+  return {exportSvg,copyPayload};
 })();

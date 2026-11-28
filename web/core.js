@@ -18,6 +18,8 @@ const P={
  redo:'<path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>',
  trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/>',
  copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+ paste:'<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M8 4H5v17h14V4h-3M8 11h8m-8 5h5"/>',
+ image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8" cy="9" r="1"/><path d="m3 17 5-4 3 2 4-5 6 6"/>',
  save:'<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
  minus:'<path d="M5 12h14"/>',plus:'<path d="M12 5v14M5 12h14"/>',
  fit:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
@@ -543,10 +545,32 @@ function engine(o){
   },{passive:false});
 
   /* ---- public API ---- */
+  function paste(groups){
+    finish();sync();
+    const gap=24;
+    let left=0,height=0;
+    const positioned=groups.map(group=>{
+      const [x0,y0,x1,y1]=bounds(group);
+      const dx=left-x0;
+      left+=x1-x0+gap;
+      height=Math.max(height,y1-y0);
+      return {group,dx,dy:-y0};
+    });
+    const x=(innerWidth/2-view.x)/view.z-(left-gap)/2;
+    const y=(innerHeight/2-view.y)/view.z-height/2;
+    const strokes=positioned.flatMap(({group,dx,dy})=>group.map(stroke=>{
+      const placed=shift(stroke,x+dx,y+dy);
+      placed.id=newId();
+      return placed;
+    }));
+    if(!strokes.length)return;
+    commit(els.concat(strokes));
+    tool="select";sel=new Set(strokes.map(stroke=>stroke.id));redraw();updateSel();
+  }
   const recolor=f=>{if(sel.size){commit(els.map(e=>sel.has(e.id)?Object.assign({},e,f(e)):e));redraw();updateSel()}};
   return{
     ZMIN:ZMIN,ZMAX:ZMAX,view:view,drawEl:drawEl,bounds:bounds,redraw:redraw,resize:resize,finish:finish,
-    undo:doUndo,redo:doRedo,clear:doClear,delSel:delSel,zoomAt:zoomAt,fit:fit,
+    undo:doUndo,redo:doRedo,clear:doClear,delSel:delSel,zoomAt:zoomAt,fit:fit,paste:paste,
     get tool(){return tool},get color(){return color},get width(){return width},get hasSel(){return sel.size>0},
     setTool(t){if(tool==="select"&&t!=="select"){sel=new Set();updateSel()}tool=t;if(ring&&t!=="eraser")ring.style.display="none";updateCursor();renderTop()},
     setColor(c,final){color=c;if(final)recolor(()=>({c:c}))},

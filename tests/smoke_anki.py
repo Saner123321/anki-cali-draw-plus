@@ -1,5 +1,4 @@
 """Exercise the desktop add-on and its hosted update in a profile with no account."""
-import base64
 import json
 import shutil
 import sys
@@ -74,6 +73,96 @@ def whole(button):
     return f"[...document.querySelectorAll('button')].find(b=>b.textContent==={json.dumps(button)}).click()"
 
 
+class MemoryClipboard:
+    data = None
+
+    def setMimeData(self, mime):
+        self.data = mime
+
+    def mimeData(self, *args, **kwargs):
+        return self.data
+
+
+def board_key(board, key):
+    js(board.web, f"dispatchEvent(new KeyboardEvent('keydown', {{key:'{key}', ctrlKey:true}}))")
+
+
+def clipboard_roundtrip(mw, board, editor):
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from aqt.qt import QMenu, QMimeData, QUrl
+    from anki_cali_draw_plus import drawing_clipboard as clip
+    from anki_cali_draw_plus.drawing_media import drawing_refs, load_clipboard_svg, read_scene
+
+    # Two differently styled strokes including both versions of the stylus pressure.
+    strokes = [
+        {"t": "pen", "c": "#1971c2", "w": 2, "pen": True, "ps": .7, "p": [[30, 30, .2, .2], [50, 50, .3, .6]]},
+        {"t": "pen", "c": "auto", "w": 10, "hl": True, "p": [[80, 70], [120, 70]]},
+    ]
+    js(board.web, f"ankiBridge.load({json.dumps(json.dumps(strokes))})")
+    clipboard = MemoryClipboard()
+    original_back = editor.note["Back"]
+    with patch.object(clip, "_clipboard", return_value=clipboard), patch.object(editor.web, "_clipboard", return_value=clipboard):
+        board_key(board, "c")
+        mime = until(clipboard.mimeData, "editable clipboard after Ctrl+C")
+        assert mime.hasFormat(clip.DRAWING_MIME) and mime.hasImage()
+        svg = bytes(mime.data(clip.DRAWING_MIME))
+        assert json.loads(load_clipboard_svg(svg)[1]) == strokes
+
+        def scene():
+            return json.loads(js(board.web, "ankiBridge.dump()") or "[]")
+
+        before = scene()
+        board_key(board, "v")
+        pasted = until(lambda: data if len(data := scene()) == 4 else None, "independent strokes pasted on canvas")
+        assert pasted[:2] == before and len({stroke["id"] for stroke in pasted}) == 4
+        assert js(board.web, "document.querySelector('#acts button').textContent") == "Copy selection"
+        dx, dy = (pasted[2]["p"][0][i] - strokes[0]["p"][0][i] for i in range(2))
+        for stroke, duplicate in zip(strokes, pasted[2:]):
+            assert {k: v for k, v in duplicate.items() if k not in ("p", "id")} == {k: v for k, v in stroke.items() if k != "p"}
+            assert duplicate["p"] == [[x + dx, y + dy, *pressure] for x, y, *pressure in stroke["p"]]
+        board_key(board, "c")
+        selection = until(lambda: current if (current := clipboard.mimeData()) is not mime else None,
+                          "only the selected strokes copied after pasting")
+        assert json.loads(load_clipboard_svg(bytes(selection.data(clip.DRAWING_MIME)))[1]) == [
+            {key: value for key, value in stroke.items() if key != "id"} for stroke in pasted[2:]
+        ]
+        clipboard.setMimeData(mime)
+        board_key(board, "z")
+        until(lambda: scene() == before, "undo only the pasted strokes")
+        board_key(board, "y")
+        until(lambda: scene() == pasted, "redo the pasted strokes")
+
+        js(editor.web, "focusField(1)")
+        editor.web.onPaste()
+        filename = until(lambda: drawing_refs("Back", editor.note["Back"]), "editable SVG paste in the Anki field")[0].filename
+        until(lambda: editor_image(editor.web, filename), "pasted SVG rendered in live editor")
+        assert json.loads(read_scene(mw.col, filename)) == strokes
+
+        url = mw.serverURL() + filename
+        request = SimpleNamespace(mediaUrl=lambda: QUrl(url))
+        menu = QMenu()
+        with patch.object(editor.web, "lastContextMenuRequest", return_value=request):
+            clip.editor_copy_action(editor.web, menu)
+        clipboard.data = None
+        assert [a.text() for a in menu.actions()] == ["Copy editable drawing"]
+        menu.actions()[0].trigger()
+        copied = until(clipboard.mimeData, "saved editor SVG copied through context menu")
+        assert copied.hasImage() and bytes(copied.data(clip.DRAWING_MIME)) == svg
+
+        # Also support a selection copied from a rich-text field with a media URL.
+        field_copy = QMimeData()
+        field_copy.setHtml(f'<img src="{url}">')
+        clipboard.setMimeData(field_copy)
+        js(board.web, "ankiBridge.load('')")
+        board_key(board, "v")
+        assert len(until(scene, "editable strokes recovered from field HTML")) == 2
+    editor.note["Back"] = original_back
+    editor.loadNote(focusTo=1)
+    js(board.web, "ankiBridge.load('[{\"t\":\"pen\",\"c\":\"auto\",\"w\":3,\"p\":[[25,30]]}]')")
+
+
 def editor_image(web, filename):
     return js(web, """(() => {
       const name=""" + json.dumps(filename) + """;
@@ -97,6 +186,10 @@ def real_editor(col, note):
 
 
 def review_tools(mw, addon, note):
+    from unittest.mock import patch
+
+    from anki_cali_draw_plus import drawing_clipboard as clip
+
     mw.col.decks.select(note.cards()[0].did)
     mw.moveToState("review")
     until(lambda: mw.reviewer.card, "reviewer launched")
@@ -120,17 +213,27 @@ def review_tools(mw, addon, note):
       return width===2 && stroke.hl && stroke.w===15;
     })()""")
     assert result, "annotation highlighter or theme change failed"
+    clipboard = MemoryClipboard()
+    with patch.object(clip, "_clipboard", return_value=clipboard):
+        overlay_click = """[...document.querySelectorAll('div')].map(e=>e.shadowRoot)
+            .find(r=>r&&r.getElementById('bar')).querySelector('[data-tip="TIP"]').click()"""
+        js(web, """__caliplus.load('[{"t":"pen","hl":true,"c":"auto","w":15,"p":[[5,6],[9,10]]}]')""")
+        js(web, overlay_click.replace("TIP", "Copy editable drawing"))
+        assert until(clipboard.mimeData, "annotation copies editable ink").hasImage()
+        js(web, "__caliplus.load('')")
+        js(web, overlay_click.replace("TIP", "Paste editable strokes"))
+        until(lambda: len(json.loads(js(web, "__caliplus.dump()") or "[]")) == 1, "annotation pastes editable ink")
     addon.toggle_annotation()
     addon.toggle_board()
     board = until(lambda: addon._board and addon._board._ready and addon._board, "review blackboard ready")
     assert js(board.web, "ankiBridge.dump()") == "", "editor ink leaked into review blackboard"
     assert js(board.web, "document.querySelector('.ad-wl').textContent") == "2"
     js(board.web, "ankiBridge.load('[{\"t\":\"pen\",\"c\":\"auto\",\"w\":3,\"p\":[[25,30]]}]')")
-    copied = []
-    board._copy_png = copied.append
-    js(board.web, whole("Copy PNG"))
-    png = until(lambda: copied, "review blackboard clipboard image")[0]
-    assert base64.b64decode(png).startswith(b"\x89PNG\r\n\x1a\n")
+    with patch.object(clip, "_clipboard", return_value=clipboard):
+        clipboard.data = None
+        js(board.web, whole("Copy"))
+        mime = until(clipboard.mimeData, "review blackboard clipboard image")
+        assert mime.hasImage() and mime.hasFormat(clip.DRAWING_MIME)
     addon.toggle_board()
 
 
@@ -245,6 +348,7 @@ def add_mode(mw, addon):
     assert dialog.isVisible() and not dialog.isMinimized()
     if area.right() - dialog.frameGeometry().right() >= 350:
         assert board.frameGeometry().left() > dialog.frameGeometry().right()
+    clipboard_roundtrip(mw, board, editor)
     js(board.web, whole("Insert into note"))
     ref = until(lambda: drawing_refs("Back", editor.note["Back"]), "image inserted in Add mode")[0]
     until(lambda: editor_image(editor.web, ref.filename), "Add editor image")
@@ -261,7 +365,7 @@ def github_update(mw, addon):
     manifest = target / "manifest.json"
     current = json.loads(manifest.read_bytes())
     # Exercise the menu with an artificially older version in the isolated copy.
-    manifest.write_text(json.dumps({**current, "human_version": "0.1.4"}))
+    manifest.write_text(json.dumps({**current, "human_version": "0.1.5"}))
     manager = mw.addonManager
     saved = {**manager.getConfig("anki_cali_draw_plus"), "cursor_size": 31}
     manager.writeConfig("anki_cali_draw_plus", saved)

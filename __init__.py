@@ -17,6 +17,7 @@ from aqt.utils import tooltip
 
 from .annotation import AnnotationOverlay
 from .blackboard import BlackboardWindow, get_config
+from .drawing_clipboard import editor_copy_action, editor_paste_mime
 from .drawing_media import drawing_refs, read_scene
 from .i18n import tr
 from .settings import SettingsDialog
@@ -346,6 +347,10 @@ def _setup() -> None:
     gui_hooks.reviewer_will_show_context_menu.append(_add_context_menu)
     gui_hooks.top_toolbar_did_init_links.append(_add_toolbar_links)
     gui_hooks.editor_did_init_buttons.append(_add_editor_button)
+    if hasattr(gui_hooks, "editor_will_process_mime"):
+        gui_hooks.editor_will_process_mime.append(editor_paste_mime)
+    if hasattr(gui_hooks, "editor_will_show_context_menu"):
+        gui_hooks.editor_will_show_context_menu.append(editor_copy_action)
     gui_hooks.webview_will_set_content.append(_style_toolbar)
     gui_hooks.webview_did_receive_js_message.append(_overlay.on_js_message)
     gui_hooks.state_did_change.append(_on_state_change)

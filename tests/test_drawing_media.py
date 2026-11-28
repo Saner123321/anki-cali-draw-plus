@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from drawing_media import drawing_refs, load_scene, media_name
+from drawing_media import drawing_refs, load_clipboard_svg, load_scene, media_name
 
 
 def svg(model):
@@ -23,6 +23,19 @@ class DrawingMediaTest(unittest.TestCase):
                      svg({"version": 1, "strokes": [{"t": "pen", "c": "auto", "w": 3, "p": [[0, 0, .1, 2]]}]})):
             with self.subTest(data=data), self.assertRaises(ValueError):
                 load_scene(data)
+
+    def test_clipboard_accepts_only_standalone_plus_svg(self):
+        data = (b'<svg xmlns="http://www.w3.org/2000/svg" width="80" height="60" viewBox="-5 -6 80 60">'
+                b'<metadata id="cali-draw-plus">{"version":1,"strokes":[]}</metadata>'
+                b'<g fill="none"><path d="M0 0 L10 10" stroke="#fff"/></g></svg>')
+        self.assertEqual(load_clipboard_svg(data), (80, "[]"))
+        for modified in (b'<?xml-stylesheet href="https://example.com/file"?>' + data,
+                         data.replace(b'<path', b'<path onload="test()"'),
+                         data.replace(b'stroke="#fff"', b'stroke="url(https://example.com/file)"'),
+                         data.replace(b'width="80"', b'width="99999"'),
+                         data.replace(b'</g>', b'<g/></g>')):
+            with self.subTest(modified=modified), self.assertRaises(ValueError):
+                load_clipboard_svg(modified)
 
     def test_replace_only_the_selected_occurrence(self):
         old, new = media_name(b"old"), media_name(b"new")

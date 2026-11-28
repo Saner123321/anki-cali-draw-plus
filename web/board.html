@@ -94,12 +94,13 @@ const widthControl=C.makeWidthControl(D,L,true,w=>send("calidraw:width:"+w));
 $("props").appendChild(widthControl.el);
 
 /* ---------- actions ---------- */
-const copyBtn=btn($("acts"),svg(P.copy)+"Copy PNG","Copy to clipboard as PNG",()=>exportPng("copy"),"txt");
+const copyBtn=btn($("acts"),svg(P.copy)+"Copy","Copy editable drawing",copyDrawing,"txt");
+btn($("acts"),svg(P.paste),"Paste editable strokes",()=>send("calidraw:paste:"+session));
 let session=0,editing=false,baseline="",pendingSnapshot=null;
 const saveBtn=btn($("acts"),svg(P.save)+"Save to card","Save an editable drawing to the note",saveDrawing,"pri");
 function onSel(n){
   saveBtn.lastChild.nodeValue=n&&!editing?tr("{action} (selection)",{action:tr(saveBase)}):tr(saveBase);
-  copyBtn.lastChild.nodeValue=tr(n?"Copy selection":"Copy PNG");
+  copyBtn.lastChild.nodeValue=tr(n?"Copy selection":"Copy");
   L.tip(trashBtn,n?"Delete selection":"Clear canvas");
 }
 
@@ -132,7 +133,8 @@ addEventListener("keydown",e=>{
   const k=e.key.toLowerCase(),mod=e.ctrlKey||e.metaKey;
   if(mod&&k==="z"){e.preventDefault();e.shiftKey?D.redo():D.undo();return}
   if(mod&&k==="y"){D.redo();return}
-  if(mod&&k==="c"){e.preventDefault();exportPng("copy");return}
+  if(mod&&k==="c"){e.preventDefault();copyDrawing();return}
+  if(mod&&k==="v"){e.preventDefault();if(!e.repeat)send("calidraw:paste:"+session);return}
   if(mod&&k==="a"){e.preventDefault();D.selectAll();setTool("select");return}
   if(mod&&k==="0"){e.preventDefault();D.zoomAt(innerWidth/2,innerHeight/2,1);return}
   if(mod||e.altKey)return;
@@ -148,18 +150,11 @@ addEventListener("keydown",e=>{
 addEventListener("keyup",e=>{if(e.code==="Space")D.setSpace(false)});
 
 /* ---------- export: only the selection if there is one ---------- */
-function exportPng(kind){
+function copyDrawing(){
   D.finish();
   const list=D.list();
   if(!list.length){toast("Canvas is empty");return}
-  const b=D.bounds(list),pad=24,x0=b[0],y0=b[1],w=b[2]-b[0]+2*pad,h=b[3]-b[1]+2*pad;
-  const px=Math.min(S.scale,8192/Math.max(w,h),Math.sqrt(5e7/(w*h)));
-  const c=document.createElement("canvas");c.width=Math.max(1,Math.ceil(w*px));c.height=Math.max(1,Math.ceil(h*px));
-  const g=c.getContext("2d");
-  if(S.exportBackground){g.fillStyle=S.exportDark?"#121212":"#fff";g.fillRect(0,0,c.width,c.height)}
-  g.setTransform(px,0,0,px,(pad-x0)*px,(pad-y0)*px);
-  for(const e of list)D.drawEl(g,e,S.exportDark);
-  send("calidraw:"+kind+":"+Math.max(1,Math.round(w*S.scale))+":"+c.toDataURL("image/png").split(",")[1]);
+  send("calidraw:copy:"+CaliPlusScene.copyPayload(D,list,S));
 }
 
 function saveDrawing(){
@@ -187,6 +182,7 @@ window.ankiBridge={
     if("zen" in o&&o.zen!==zen){zenHidden=S.zen==="toggle";document.body.classList.remove("writing");applyZen();send("calidraw:zen:"+(zenHidden?1:0))}
   },
   setSaveLabel(t){saveBase=t;onSel(D.hasSel?1:0)},
+  paste(id,groups){if(id===session){D.paste(groups);setTool("select")}},
   beginSession(id,scene,isEdit){
     session=id;editing=isEdit;D.load(scene);D.fit();
     if(D.view.z>1)D.zoomAt(innerWidth/2,innerHeight/2,1);

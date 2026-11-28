@@ -82,10 +82,20 @@ btn(svg(P.undo),"Undo",D.undo);btn(svg(P.redo),"Redo",D.redo);
 const trashBtn=btn(svg(P.trash),"Clear annotations",()=>D.hasSel?D.delSel():D.clear());
 const eyeBtn=btn(svg(P.eye),"",()=>api.toggleZen());
 sep();
-const copyBtn=btn(svg(P.copy)+"Copy","Copy the card with your annotations to the clipboard",()=>pycmd("caliplus:copy"),"pri");
+const copyBtn=btn(svg(P.copy)+"Copy","Copy editable drawing",()=>{
+  D.finish();
+  const list=D.list();
+  if(list.length)pycmd("caliplus:copy-ink:"+CaliPlusScene.copyPayload(D,list,S));
+  else pycmd("caliplus:empty");
+},"pri");
+btn(svg(P.paste),"Paste editable strokes",()=>pycmd("caliplus:paste"));
+btn(svg(P.image),"Copy the card with your annotations to the clipboard",()=>pycmd("caliplus:copy"));
 btn(svg(P.gear),"Anki-Cali Draw Plus settings",()=>pycmd("caliplus:settings"));
 btn(svg(P.close),"Close annotation mode",()=>{api.hide();pycmd("caliplus:closed")});
-function onSel(n){L.tip(trashBtn,n?"Delete selection":"Clear annotations")}
+function onSel(n){
+  L.tip(trashBtn,n?"Delete selection":"Clear annotations");
+  copyBtn.lastChild.nodeValue=tr(n?"Copy selection":"Copy");
+}
 
 /* ---- zen mode ---- */
 const ghost=C.el("button","ad-ghost",svg(P.eye));L.tip(ghost,"Show the tools again");ghost.onclick=()=>api.toggleZen();wrap.appendChild(ghost);
@@ -103,7 +113,7 @@ function configure(o){
   D.configureInput();
   if("dark" in o){wrap.classList.toggle("dark",!!o.dark);D.redraw()}
   if("penWidth" in o)widthControl.restore(S.penWidth);
-  if("strings" in o){L.refresh(wrap);copyBtn.lastChild.nodeValue=tr("Copy")}
+  if("strings" in o){L.refresh(wrap);onSel(D.hasSel?1:0)}
   if("favs" in o||"strings" in o){renderSwatches();picker.renderFavs()}
   if("zenKey" in o)updateZenTip();
   if("zen" in o&&o.zen!==zen){zenHidden=S.zen==="toggle";wrap.classList.remove("writing");applyZen()}
@@ -116,6 +126,7 @@ const api=window.__caliplus={
   setTheme(d){configure({dark:!!d})},
   toggleZen(){zenHidden=!zenHidden;applyZen()},
   clear:D.clear,dump:D.dump,load:D.load,
+  paste(groups){D.paste(groups);setTool("select")},
   prep(){wrap.classList.add("shot");D.hideSel(true);return 1},          // hide toolbar + selection box for a screenshot
   unprep(){wrap.classList.remove("shot");D.hideSel(false);return 1}
 };

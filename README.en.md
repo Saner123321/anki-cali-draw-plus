@@ -9,6 +9,7 @@ Anki-Cali Draw Plus is a desktop Anki handwriting add-on based on Anki-Cali Draw
 - **Separate pen and touch controls.** Write with a stylus on the infinite canvas and pan with a finger without switching tools.
 - **Two-finger gestures.** Pinch to zoom or pan with two fingers on the blackboard.
 - **Editable SVG strokes.** Reopen a drawing after inserting it into a card to select, move, or erase individual strokes and keep drawing.
+- **Copy and paste editable ink.** Copy a selection or a whole canvas and keep editing the strokes after pasting into another canvas or Anki note.
 - **Pen cursor and remembered thickness.** Change the cursor shape and size, or hide it. The canvas remembers the last pen thickness you selected.
 
 ## Install and use
@@ -22,13 +23,19 @@ The blackboard title bar has controls for settings, minimize, maximize or restor
 
 Under **Settings → General → Interface language**, choose **Follow Anki**, **English**, or **简体中文**. By default, Plus uses Simplified Chinese when Anki is set to Chinese and English otherwise. Saving applies the language to open blackboards and preserves their drawings.
 
+### Copy and paste strokes
+
+- On the blackboard, press `Ctrl+C` or click **Copy** to copy the selected strokes. With nothing selected, this copies the whole drawing. On another Plus blackboard, press `Ctrl+V` or click **Paste editable strokes**. The pasted strokes appear selected in the center of the view, ready to move together or edit individually.
+- Paste into an Anki note field to insert an editable SVG at the caret. To copy a drawing already in a note, right-click it and choose **Copy editable drawing**, then paste it into a blackboard or note field.
+- Other apps that accept pasted images can use the clipboard's image preview. The review annotation toolbar also supports copying and pasting editable strokes and has a separate button to copy the card with its annotations as an image.
+
 ## Using both add-ons and updating Plus
 
 Plus hides duplicate buttons from the original add-on in the top toolbar and editor by default. The original `1205964508` can stay enabled and receive AnkiWeb updates through **Tools → Add-ons → Check for Updates**. To show both sets of buttons, clear **Hide duplicate buttons from the original Anki-Cali Draw** under **Settings… → Toolbar**.
 
 For Plus updates, choose **Tools → Anki-Cali Draw Plus → Check for updates (GitHub)…**, confirm the installation, and restart Anki. Plus reads the version and checksum from the latest GitHub Release, verifies the package with SHA-256, and uses the Anki installer to preserve local settings. Each device can check for updates independently. If you have version 0.1.0, install the latest GitHub release from file once.
 
-While reviewing, use `Ctrl+Alt+Shift+E` to open the blackboard or `Ctrl+Alt+Shift+D` to open the on-card annotation overlay. In the overlay, dragging with a finger scrolls the card and its ink together. Pinch-to-zoom is available on the blackboard. `Alt+Shift+Z` toggles the drawing tools. **Copy PNG** copies the selection or the whole blackboard as a standard image.
+While reviewing, use `Ctrl+Alt+Shift+E` to open the blackboard or `Ctrl+Alt+Shift+D` to open the on-card annotation overlay. In the overlay, dragging with a finger scrolls the card and its ink together. Pinch-to-zoom is available on the blackboard. `Alt+Shift+Z` toggles the drawing tools.
 
 ## Drawing format and compatibility
 
